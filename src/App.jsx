@@ -454,7 +454,10 @@ export default function App() {
     setSaving(true); setError(null);
     try {
       const { id, created_at, ...data } = form;
-      const clean = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v ?? ""]));
+      const clean = Object.fromEntries(Object.entries(data).map(([k, v]) => {
+        if (k === "lat" || k === "lng") return [k, v || null];
+        return [k, v ?? ""];
+      }));
       if (id) { await api.updateTask(id, clean); } else { await api.createTask(clean); }
       setModal(null);
       await loadData();
