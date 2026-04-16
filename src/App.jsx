@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const SUPABASE_URL = "https://jfzyueilhrbzkvllyjfd.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
@@ -20,33 +20,45 @@ const TYPE_CONFIG = {
   recogida: { label: "Recogida", icon: "↑", color: "#F472B6" },
 };
 
-async function sbFetch(path, options = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err);
-  }
+// ── Supabase helpers ──────────────────────────────────────────
+async function sbFetch(path, options = {}, token = null) {
+  const headers = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": `Bearer ${token || SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers });
+  if (!res.ok) throw new Error(await res.text());
   const text = await res.text();
   return text ? JSON.parse(text) : [];
 }
 
-const api = {
-  getTasks:     () => sbFetch("tasks?order=created_at.desc&status=neq.completado"),
-  getCompleted: () => sbFetch("tasks?order=created_at.desc&status=eq.completado"),
-  createTask:   (data) => sbFetch("tasks", { method: "POST", body: JSON.stringify(data), headers: { "Prefer": "return=minimal" } }),
-  updateTask:   (id, data) => sbFetch(`tasks?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Prefer": "return=minimal" } }),
-  deleteTask:   (id) => sbFetch(`tasks?id=eq.${id}`, { method: "DELETE", headers: { "Prefer": "return=minimal" } }),
-};
+async function authFetch(path, body) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || "Error de autenticación");
+  return data;
+}
 
-// Load Leaflet CSS + JS dynamically
+// ── UI helpers ────────────────────────────────────────────────
+function Badge({ status }) {
+  const c = STATUS_CONFIG[status] || STATUS_CONFIG.pendiente;
+  return <span style={{ background: c.bg, color: c.color, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{c.label}</span>;
+}
+function TypeBadge({ type }) {
+  const t = TYPE_CONFIG[type] || TYPE_CONFIG.entrega;
+  return <span style={{ background: `${t.color}20`, color: t.color, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>;
+}
+
+const inp = { width: "100%", padding: "13px 14px", borderRadius: 12, border: "1px solid #1E2D3D", background: "#0D1B2A", color: "#E2E8F0", fontSize: 15, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+const labelStyle = { display: "block", fontSize: 11, color: "#475569", marginBottom: 5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" };
+
+// ── Leaflet helpers ───────────────────────────────────────────
 function useLeaflet(onReady) {
   useEffect(() => {
     if (window.L) { onReady(); return; }
@@ -61,7 +73,30 @@ function useLeaflet(onReady) {
   }, []);
 }
 
-// ── Map Picker Component ──────────────────────────────────────
+function MiniMap({ lat, lng }) {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(!!window.L);
+  useLeaflet(() => setReady(true));
+  useEffect(() => {
+    if (!ready || !ref.current) return;
+    const L = window.L;
+    const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, attributionControl: false, tap: false }).setView([lat, lng], 15);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+    const icon = L.divIcon({ html: `<div style="font-size:24px;line-height:1">📍</div>`, className: "", iconAnchor: [12, 24], iconSize: [24, 24] });
+    L.marker([lat, lng], { icon }).addTo(map);
+    return () => map.remove();
+  }, [ready, lat, lng]);
+  return (
+    <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #1E2D3D", position: "relative", zIndex: 0 }}>
+      <div ref={ref} style={{ height: 130, width: "100%" }} />
+      <button onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank")}
+        style={{ position: "absolute", bottom: 8, right: 8, zIndex: 10, background: "#4F46E5", border: "none", color: "#fff", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>
+        🚗 Navegar
+      </button>
+    </div>
+  );
+}
+
 function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -73,17 +108,13 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
   const [pickedLat, setPickedLat] = useState(initialLat || null);
   const [pickedLng, setPickedLng] = useState(initialLng || null);
   const [searchError, setSearchError] = useState("");
-
   useLeaflet(() => setLeafletReady(true));
 
-  const placeMarker = useCallback((lat, lng, address) => {
+  const placeMarker = (lat, lng, address) => {
     const L = window.L;
     if (!mapInstanceRef.current) return;
     if (markerRef.current) markerRef.current.remove();
-    const icon = L.divIcon({
-      html: `<div style="font-size:32px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">📍</div>`,
-      className: "", iconAnchor: [16, 32], iconSize: [32, 32],
-    });
+    const icon = L.divIcon({ html: `<div style="font-size:32px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">📍</div>`, className: "", iconAnchor: [16, 32], iconSize: [32, 32] });
     markerRef.current = L.marker([lat, lng], { icon, draggable: true }).addTo(mapInstanceRef.current);
     markerRef.current.on("dragend", async (e) => {
       const { lat: la, lng: lo } = e.target.getLatLng();
@@ -91,24 +122,20 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
       try {
         const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${la}&lon=${lo}&format=json`);
         const d = await r.json();
-        const addr = d.display_name || `${la.toFixed(5)}, ${lo.toFixed(5)}`;
-        setPickedAddress(addr); setSearch(addr);
+        setPickedAddress(d.display_name || `${la.toFixed(5)}, ${lo.toFixed(5)}`);
+        setSearch(d.display_name || `${la.toFixed(5)}, ${lo.toFixed(5)}`);
       } catch { setPickedAddress(`${la.toFixed(5)}, ${lo.toFixed(5)}`); }
     });
     setPickedLat(lat); setPickedLng(lng);
     if (address) { setPickedAddress(address); setSearch(address); }
     mapInstanceRef.current.setView([lat, lng], 16);
-  }, []);
+  };
 
   useEffect(() => {
     if (!leafletReady || !mapRef.current || mapInstanceRef.current) return;
     const L = window.L;
-    const startLat = initialLat || 37.9922; // Murcia por defecto
-    const startLng = initialLng || -1.1307;
-    const map = L.map(mapRef.current, { zoomControl: true }).setView([startLat, startLng], initialLat ? 16 : 13);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap", maxZoom: 19
-    }).addTo(map);
+    const map = L.map(mapRef.current, { zoomControl: true }).setView([initialLat || 37.9922, initialLng || -1.1307], initialLat ? 16 : 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap", maxZoom: 19 }).addTo(map);
     map.on("click", async (e) => {
       const { lat, lng } = e.latlng;
       try {
@@ -134,65 +161,76 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
   };
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
-      backdropFilter: "blur(8px)", zIndex: 300,
-      display: "flex", flexDirection: "column"
-    }}>
-      {/* Search bar */}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", zIndex: 300, display: "flex", flexDirection: "column" }}>
       <div style={{ background: "#0A1628", padding: "14px 14px 10px", borderBottom: "1px solid #1E2D3D" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleSearch()}
-            placeholder="Busca una dirección..."
-            style={{
-              flex: 1, padding: "11px 14px", borderRadius: 10,
-              border: "1px solid #1E2D3D", background: "#0D1B2A",
-              color: "#E2E8F0", fontSize: 14, outline: "none", fontFamily: "inherit"
-            }}
-          />
-          <button onClick={handleSearch} disabled={searching} style={{
-            padding: "11px 16px", borderRadius: 10, border: "none",
-            background: "linear-gradient(135deg,#4F46E5,#7C3AED)",
-            color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, whiteSpace: "nowrap"
-          }}>{searching ? "..." : "🔍"}</button>
+          <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()} placeholder="Busca una dirección..." style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: "1px solid #1E2D3D", background: "#0D1B2A", color: "#E2E8F0", fontSize: 14, outline: "none", fontFamily: "inherit" }} />
+          <button onClick={handleSearch} disabled={searching} style={{ padding: "11px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>{searching ? "..." : "🔍"}</button>
         </div>
         {searchError && <div style={{ color: "#F87171", fontSize: 12, marginBottom: 4 }}>{searchError}</div>}
-        <div style={{ color: "#475569", fontSize: 11 }}>
-          💡 Busca o pulsa en el mapa para poner la chincheta. Puedes arrastrarla.
-        </div>
+        <div style={{ color: "#475569", fontSize: 11 }}>💡 Busca o pulsa en el mapa. Puedes arrastrar la chincheta.</div>
       </div>
-
-      {/* Map */}
       <div style={{ flex: 1, position: "relative" }}>
-        {!leafletReady && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 14, zIndex: 1 }}>
-            Cargando mapa...
-          </div>
-        )}
+        {!leafletReady && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 14 }}>Cargando mapa...</div>}
         <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
       </div>
-
-      {/* Bottom panel */}
       <div style={{ background: "#0A1628", padding: "14px", borderTop: "1px solid #1E2D3D" }}>
-        {pickedAddress && (
-          <div style={{ color: "#94A3B8", fontSize: 12, marginBottom: 12, padding: "10px 12px", background: "#0D1B2A", borderRadius: 10, border: "1px solid #1E2D3D" }}>
-            📍 {pickedAddress}
-          </div>
-        )}
+        {pickedAddress && <div style={{ color: "#94A3B8", fontSize: 12, marginBottom: 12, padding: "10px 12px", background: "#0D1B2A", borderRadius: 10, border: "1px solid #1E2D3D" }}>📍 {pickedAddress}</div>}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
-          <button onClick={onClose} style={{
-            padding: "13px", borderRadius: 12, border: "1px solid #1E2D3D",
-            background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 14
-          }}>Cancelar</button>
-          <button onClick={() => pickedLat && onConfirm(pickedAddress, pickedLat, pickedLng)} disabled={!pickedLat} style={{
-            padding: "13px", borderRadius: 12, border: "none",
-            background: pickedLat ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : "#1E2D3D",
-            color: pickedLat ? "#fff" : "#475569", cursor: pickedLat ? "pointer" : "default",
-            fontWeight: 700, fontSize: 14
-          }}>✅ Guardar ubicación</button>
+          <button onClick={onClose} style={{ padding: "13px", borderRadius: 12, border: "1px solid #1E2D3D", background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>Cancelar</button>
+          <button onClick={() => pickedLat && onConfirm(pickedAddress, pickedLat, pickedLng)} disabled={!pickedLat} style={{ padding: "13px", borderRadius: 12, border: "none", background: pickedLat ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : "#1E2D3D", color: pickedLat ? "#fff" : "#475569", cursor: pickedLat ? "pointer" : "default", fontWeight: 700, fontSize: 14 }}>✅ Guardar ubicación</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Login Screen ──────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async () => {
+    if (!email || !password) { setError("Introduce email y contraseña"); return; }
+    setLoading(true); setError("");
+    try {
+      const data = await authFetch("token?grant_type=password", { email, password });
+      onLogin(data.access_token, data.user);
+    } catch (e) {
+      setError("Email o contraseña incorrectos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#060D1A", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      <div style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: "linear-gradient(135deg,#4F46E5,#7C3AED)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, margin: "0 auto 16px" }}>🚛</div>
+          <div style={{ fontWeight: 800, fontSize: 26, color: "#F1F5F9" }}>FleetDesk</div>
+          <div style={{ color: "#475569", fontSize: 14, marginTop: 4 }}>Gestión de rutas y entregas</div>
+        </div>
+
+        <div style={{ background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 20, padding: "28px 24px" }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} style={inp} placeholder="tu@email.com" />
+            </div>
+            <div>
+              <label style={labelStyle}>Contraseña</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} style={inp} placeholder="••••••••" />
+            </div>
+          </div>
+
+          {error && <div style={{ marginTop: 12, color: "#F87171", fontSize: 13, textAlign: "center" }}>{error}</div>}
+
+          <button onClick={handleLogin} disabled={loading} style={{ width: "100%", marginTop: 20, padding: "15px", borderRadius: 12, border: "none", background: loading ? "#1E2D3D" : "linear-gradient(135deg,#4F46E5,#7C3AED)", color: loading ? "#475569" : "#fff", cursor: loading ? "default" : "pointer", fontWeight: 700, fontSize: 16, fontFamily: "inherit" }}>
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
         </div>
       </div>
     </div>
@@ -200,95 +238,47 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
 }
 
 // ── Task Modal ────────────────────────────────────────────────
-const inp = {
-  width: "100%", padding: "12px 14px", borderRadius: 10,
-  border: "1px solid #1E2D3D", background: "#0D1B2A",
-  color: "#E2E8F0", fontSize: 15, outline: "none",
-  fontFamily: "inherit", boxSizing: "border-box",
-};
-const labelStyle = { display: "block", fontSize: 11, color: "#475569", marginBottom: 5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" };
-
-function TaskModal({ task, onClose, onSave, loading }) {
-  const [form, setForm] = useState(task || {
-    type: "entrega", truck: "T-01", client: "", address: "",
-    lat: null, lng: null, time: "", status: "pendiente", weight: "", notes: ""
-  });
+function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
+  const [form, setForm] = useState(task || { type: "entrega", truck: "T-01", client: "", address: "", lat: null, lng: null, time: "", status: "pendiente", weight: "", notes: "" });
   const [showMap, setShowMap] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleMapConfirm = (address, lat, lng) => {
-    setForm(f => ({ ...f, address, lat, lng }));
-    setShowMap(false);
-  };
-
   return (
     <>
-      <div style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-        backdropFilter: "blur(8px)", zIndex: 100,
-        display: "flex", alignItems: "flex-end", justifyContent: "center"
-      }} onClick={onClose}>
-        <div style={{
-          background: "#0A1628", border: "1px solid #1E2D3D",
-          borderRadius: "20px 20px 0 0", padding: "20px 16px 36px",
-          width: "100%", maxWidth: 540,
-          boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
-          maxHeight: "92vh", overflowY: "auto"
-        }} onClick={e => e.stopPropagation()}>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+        <div style={{ background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: "20px 20px 0 0", padding: "20px 16px 36px", width: "100%", maxWidth: 540, boxShadow: "0 -20px 60px rgba(0,0,0,0.6)", maxHeight: "92vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
           <div style={{ width: 36, height: 4, background: "#1E2D3D", borderRadius: 99, margin: "0 auto 18px" }} />
-          <h3 style={{ margin: "0 0 18px", fontSize: 17, fontWeight: 700, color: "#E2E8F0" }}>
-            {task ? "Editar tarea" : "Nueva tarea"}
-          </h3>
+          <h3 style={{ margin: "0 0 18px", fontSize: 17, fontWeight: 700, color: "#E2E8F0" }}>{task ? "Editar tarea" : "Nueva tarea"}</h3>
           <div style={{ display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <label style={labelStyle}>Tipo</label>
-                <select value={form.type} onChange={e => set("type", e.target.value)} style={inp}>
-                  <option value="entrega">↓ Entrega</option>
-                  <option value="recogida">↑ Recogida</option>
-                </select>
+            {isAdmin && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>Tipo</label>
+                  <select value={form.type} onChange={e => set("type", e.target.value)} style={inp}>
+                    <option value="entrega">↓ Entrega</option>
+                    <option value="recogida">↑ Recogida</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Conductor</label>
+                  <select value={form.truck} onChange={e => set("truck", e.target.value)} style={inp}>
+                    {trucks.map(t => <option key={t.id} value={t.id}>{t.driver}</option>)}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label style={labelStyle}>Conductor</label>
-                <select value={form.truck} onChange={e => set("truck", e.target.value)} style={inp}>
-                  {trucks.map(t => <option key={t.id} value={t.id}>{t.driver}</option>)}
-                </select>
-              </div>
-            </div>
-
+            )}
             <div>
               <label style={labelStyle}>Cliente</label>
               <input value={form.client} onChange={e => set("client", e.target.value)} style={inp} placeholder="Nombre del cliente" />
             </div>
-
-            {/* Address with map button */}
             <div>
               <label style={labelStyle}>Ubicación</label>
               <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  value={form.address}
-                  onChange={e => set("address", e.target.value)}
-                  style={{ ...inp, flex: 1 }}
-                  placeholder="Busca en el mapa →"
-                  readOnly
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowMap(true)}
-                  style={{
-                    width: 50, borderRadius: 10, border: form.lat ? "2px solid #4F46E5" : "1px solid #1E2D3D",
-                    background: form.lat ? "rgba(79,70,229,0.15)" : "#0D1B2A",
-                    cursor: "pointer", fontSize: 22,
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                  }}>📍</button>
+                <input value={form.address} style={{ ...inp, flex: 1 }} placeholder="Busca en el mapa →" readOnly />
+                <button type="button" onClick={() => setShowMap(true)} style={{ width: 50, borderRadius: 10, border: form.lat ? "2px solid #4F46E5" : "1px solid #1E2D3D", background: form.lat ? "rgba(79,70,229,0.15)" : "#0D1B2A", cursor: "pointer", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>📍</button>
               </div>
-              {form.lat && (
-                <div style={{ marginTop: 6, fontSize: 11, color: "#4F46E5" }}>
-                  ✓ Ubicación guardada en el mapa
-                </div>
-              )}
+              {form.lat && <div style={{ marginTop: 6, fontSize: 11, color: "#4F46E5" }}>✓ Ubicación guardada en el mapa</div>}
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <label style={labelStyle}>Hora</label>
@@ -299,127 +289,57 @@ function TaskModal({ task, onClose, onSave, loading }) {
                 <input value={form.weight} onChange={e => set("weight", e.target.value)} style={inp} placeholder="ej. 200 kg" />
               </div>
             </div>
-
-            <div>
-              <label style={labelStyle}>Estado</label>
-              <select value={form.status} onChange={e => set("status", e.target.value)} style={inp}>
-                {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </div>
-
+            {isAdmin && (
+              <div>
+                <label style={labelStyle}>Estado</label>
+                <select value={form.status} onChange={e => set("status", e.target.value)} style={inp}>
+                  {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label style={labelStyle}>Notas</label>
               <input value={form.notes} onChange={e => set("notes", e.target.value)} style={inp} placeholder="Instrucciones especiales..." />
             </div>
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, marginTop: 18 }}>
-            <button onClick={onClose} style={{ padding: "14px", borderRadius: 12, border: "1px solid #1E2D3D", background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 15 }}>
-              Cancelar
-            </button>
-            <button onClick={() => onSave(form)} disabled={loading} style={{
-              padding: "14px", borderRadius: 12, border: "none",
-              background: loading ? "#1E2D3D" : "linear-gradient(135deg,#4F46E5,#7C3AED)",
-              color: loading ? "#475569" : "#fff", cursor: loading ? "default" : "pointer", fontWeight: 700, fontSize: 15
-            }}>
+            <button onClick={onClose} style={{ padding: "14px", borderRadius: 12, border: "1px solid #1E2D3D", background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 15 }}>Cancelar</button>
+            <button onClick={() => onSave(form)} disabled={loading} style={{ padding: "14px", borderRadius: 12, border: "none", background: loading ? "#1E2D3D" : "linear-gradient(135deg,#4F46E5,#7C3AED)", color: loading ? "#475569" : "#fff", cursor: loading ? "default" : "pointer", fontWeight: 700, fontSize: 15 }}>
               {loading ? "Guardando..." : "Guardar"}
             </button>
           </div>
         </div>
       </div>
-
-      {showMap && (
-        <MapPicker
-          initialAddress={form.address}
-          initialLat={form.lat}
-          initialLng={form.lng}
-          onConfirm={handleMapConfirm}
-          onClose={() => setShowMap(false)}
-        />
-      )}
+      {showMap && <MapPicker initialAddress={form.address} initialLat={form.lat} initialLng={form.lng} onConfirm={(address, lat, lng) => { setForm(f => ({ ...f, address, lat, lng })); setShowMap(false); }} onClose={() => setShowMap(false)} />}
     </>
   );
 }
 
 function DeleteModal({ onConfirm, onCancel, loading }) {
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-      backdropFilter: "blur(8px)", zIndex: 200,
-      display: "flex", alignItems: "flex-end", justifyContent: "center"
-    }} onClick={onCancel}>
-      <div style={{
-        background: "#0A1628", border: "1px solid #1E2D3D",
-        borderRadius: "20px 20px 0 0", padding: "24px 20px 36px",
-        width: "100%", maxWidth: 540, textAlign: "center"
-      }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onCancel}>
+      <div style={{ background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: "20px 20px 0 0", padding: "24px 20px 36px", width: "100%", maxWidth: 540, textAlign: "center" }} onClick={e => e.stopPropagation()}>
         <div style={{ width: 36, height: 4, background: "#1E2D3D", borderRadius: 99, margin: "0 auto 20px" }} />
         <div style={{ fontSize: 36, marginBottom: 10 }}>🗑️</div>
         <div style={{ fontWeight: 700, fontSize: 17, color: "#E2E8F0", marginBottom: 6 }}>¿Eliminar tarea?</div>
         <div style={{ color: "#475569", fontSize: 13, marginBottom: 24 }}>No se puede deshacer</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <button onClick={onCancel} style={{ padding: "14px", borderRadius: 12, border: "1px solid #1E2D3D", background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 15 }}>Cancelar</button>
-          <button onClick={onConfirm} disabled={loading} style={{ padding: "14px", borderRadius: 12, border: "none", background: "#EF4444", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 15 }}>
-            {loading ? "..." : "Eliminar"}
-          </button>
+          <button onClick={onConfirm} disabled={loading} style={{ padding: "14px", borderRadius: 12, border: "none", background: "#EF4444", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 15 }}>{loading ? "..." : "Eliminar"}</button>
         </div>
       </div>
     </div>
   );
 }
 
-function Badge({ status }) {
-  const c = STATUS_CONFIG[status] || STATUS_CONFIG.pendiente;
-  return <span style={{ background: c.bg, color: c.color, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{c.label}</span>;
-}
-function TypeBadge({ type }) {
-  const t = TYPE_CONFIG[type];
-  return <span style={{ background: `${t.color}20`, color: t.color, borderRadius: 20, padding: "2px 9px", fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>;
-}
-
-// ── Mini map on task card ─────────────────────────────────────
-function MiniMap({ lat, lng, address }) {
-  const ref = useRef(null);
-  const [ready, setReady] = useState(!!window.L);
-  useLeaflet(() => setReady(true));
-
-  useEffect(() => {
-    if (!ready || !ref.current) return;
-    const L = window.L;
-    const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, attributionControl: false, tap: false }).setView([lat, lng], 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
-    const icon = L.divIcon({ html: `<div style="font-size:24px;line-height:1">📍</div>`, className: "", iconAnchor: [12, 24], iconSize: [24, 24] });
-    L.marker([lat, lng], { icon }).addTo(map);
-    return () => map.remove();
-  }, [ready, lat, lng]);
-
-  const openGoogleMaps = () => {
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank");
-  };
-
-  return (
-    <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #1E2D3D", position: "relative", zIndex: 0 }}>
-      <div ref={ref} style={{ height: 130, width: "100%" }} />
-      <button
-        onClick={openGoogleMaps}
-        style={{
-          position: "absolute", bottom: 8, right: 8, zIndex: 10,
-          background: "#4F46E5", border: "none", color: "#fff",
-          borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-          fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
-          display: "flex", alignItems: "center", gap: 4
-        }}>
-        🚗 Navegar
-      </button>
-    </div>
-  );
-}
-
 // ── Main App ──────────────────────────────────────────────────
 export default function App() {
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [completed, setCompleted] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
@@ -433,14 +353,52 @@ export default function App() {
     link.rel = "stylesheet";
     document.head.appendChild(link);
 
-    // Add lat/lng columns to Supabase if not exists (safe to run multiple times)
-    loadData();
+    // Restore session
+    const savedToken = sessionStorage.getItem("fleet_token");
+    const savedUser = sessionStorage.getItem("fleet_user");
+    const savedRole = sessionStorage.getItem("fleet_role");
+    if (savedToken && savedUser && savedRole) {
+      setToken(savedToken);
+      setUser(JSON.parse(savedUser));
+      setRole(savedRole);
+    }
   }, []);
+
+  useEffect(() => {
+    if (token && role) loadData();
+  }, [token, role]);
+
+  const handleLogin = async (accessToken, userData) => {
+    setLoading(true);
+    try {
+      const profiles = await sbFetch(`profiles?id=eq.${userData.id}`, {}, accessToken);
+      const userRole = profiles[0]?.role || "conductor";
+      setToken(accessToken);
+      setUser(userData);
+      setRole(userRole);
+      sessionStorage.setItem("fleet_token", accessToken);
+      sessionStorage.setItem("fleet_user", JSON.stringify(userData));
+      sessionStorage.setItem("fleet_role", userRole);
+    } catch (e) {
+      setError("Error al obtener perfil");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setToken(null); setUser(null); setRole(null);
+    setTasks([]); setCompleted([]);
+    sessionStorage.clear();
+  };
 
   const loadData = async () => {
     setLoading(true); setError(null);
     try {
-      const [active, done] = await Promise.all([api.getTasks(), api.getCompleted()]);
+      const [active, done] = await Promise.all([
+        sbFetch("tasks?order=created_at.desc&status=neq.completado", {}, token),
+        sbFetch("tasks?order=created_at.desc&status=eq.completado", {}, token),
+      ]);
       setTasks(active || []);
       setCompleted(done || []);
     } catch (e) {
@@ -458,7 +416,11 @@ export default function App() {
         if (k === "lat" || k === "lng") return [k, v || null];
         return [k, v ?? ""];
       }));
-      if (id) { await api.updateTask(id, clean); } else { await api.createTask(clean); }
+      if (id) {
+        await sbFetch(`tasks?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(clean), headers: { "Prefer": "return=minimal" } }, token);
+      } else {
+        await sbFetch("tasks", { method: "POST", body: JSON.stringify(clean), headers: { "Prefer": "return=minimal" } }, token);
+      }
       setModal(null);
       await loadData();
     } catch (e) {
@@ -469,14 +431,19 @@ export default function App() {
   };
 
   const markComplete = async (id) => {
-    try { await api.updateTask(id, { status: "completado" }); await loadData(); }
-    catch { setError("Error al actualizar."); }
+    try {
+      await sbFetch(`tasks?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ status: "completado" }), headers: { "Prefer": "return=minimal" } }, token);
+      await loadData();
+    } catch { setError("Error al actualizar."); }
   };
 
   const handleDelete = async () => {
     setSaving(true);
-    try { await api.deleteTask(deleteId); setDeleteId(null); await loadData(); }
-    catch { setError("Error al eliminar."); }
+    try {
+      await sbFetch(`tasks?id=eq.${deleteId}`, { method: "DELETE", headers: { "Prefer": "return=minimal" } }, token);
+      setDeleteId(null);
+      await loadData();
+    } catch { setError("Error al eliminar."); }
     finally { setSaving(false); }
   };
 
@@ -484,21 +451,23 @@ export default function App() {
     const order = ["pendiente", "en_ruta", "incidencia"];
     const next = order[(order.indexOf(task.status) + 1) % order.length];
     try {
-      await api.updateTask(task.id, { status: next });
+      await sbFetch(`tasks?id=eq.${task.id}`, { method: "PATCH", body: JSON.stringify({ status: next }), headers: { "Prefer": "return=minimal" } }, token);
       setTasks(ts => ts.map(t => t.id === task.id ? { ...t, status: next } : t));
     } catch { setError("Error al actualizar."); }
   };
 
+  const isAdmin = role === "admin";
   const filtered = (activeTab === "activas" ? tasks : completed).filter(t =>
     filterTruck === "all" || t.truck === filterTruck
   );
-
   const stats = {
     pendiente: tasks.filter(t => t.status === "pendiente").length,
     en_ruta: tasks.filter(t => t.status === "en_ruta").length,
     incidencia: tasks.filter(t => t.status === "incidencia").length,
     completado: completed.length,
   };
+
+  if (!token) return <LoginScreen onLogin={handleLogin} />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#060D1A", color: "#E2E8F0", fontFamily: "'Plus Jakarta Sans', sans-serif", paddingBottom: 100 }}>
@@ -509,10 +478,15 @@ export default function App() {
             <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#4F46E5,#7C3AED)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🚛</div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>FleetDesk</div>
-              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>Rutas en tiempo real</div>
+              <div style={{ fontSize: 10, color: isAdmin ? "#818CF8" : "#34D399", marginTop: 2, fontWeight: 600 }}>
+                {isAdmin ? "👑 Administrador" : "🚛 Conductor"}
+              </div>
             </div>
           </div>
-          <button onClick={loadData} style={{ background: "#1E2D3D", border: "none", color: "#94A3B8", width: 34, height: 34, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>↻</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={loadData} style={{ background: "#1E2D3D", border: "none", color: "#94A3B8", width: 34, height: 34, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>↻</button>
+            <button onClick={handleLogout} style={{ background: "#1E2D3D", border: "none", color: "#94A3B8", width: 34, height: 34, borderRadius: 10, cursor: "pointer", fontSize: 14 }}>🚪</button>
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 14 }}>
@@ -530,13 +504,8 @@ export default function App() {
         </div>
 
         <div style={{ display: "flex" }}>
-          {[["activas","Activas"],["completadas","Completadas"]].map(([k,l]) => (
-            <button key={k} onClick={() => setActiveTab(k)} style={{
-              flex: 1, padding: "10px", border: "none", background: "transparent",
-              color: activeTab === k ? "#818CF8" : "#475569", fontWeight: 700, fontSize: 13,
-              cursor: "pointer", borderBottom: activeTab === k ? "2px solid #818CF8" : "2px solid transparent",
-              transition: "all 0.2s", fontFamily: "inherit"
-            }}>{l}</button>
+          {[["activas", "Activas"], ["completadas", "Completadas"]].map(([k, l]) => (
+            <button key={k} onClick={() => setActiveTab(k)} style={{ flex: 1, padding: "10px", border: "none", background: "transparent", color: activeTab === k ? "#818CF8" : "#475569", fontWeight: 700, fontSize: 13, cursor: "pointer", borderBottom: activeTab === k ? "2px solid #818CF8" : "2px solid transparent", transition: "all 0.2s", fontFamily: "inherit" }}>{l}</button>
           ))}
         </div>
       </div>
@@ -567,10 +536,8 @@ export default function App() {
         {!loading && filtered.length === 0 && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>
-              {activeTab === "activas" ? "No hay tareas activas" : "No hay tareas completadas"}
-            </div>
-            {activeTab === "activas" && <div style={{ fontSize: 13, marginTop: 6, color: "#1E2D3D" }}>Pulsa + para añadir una</div>}
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{activeTab === "activas" ? "No hay tareas activas" : "No hay tareas completadas"}</div>
+            {activeTab === "activas" && isAdmin && <div style={{ fontSize: 13, marginTop: 6, color: "#1E2D3D" }}>Pulsa + para añadir una</div>}
           </div>
         )}
 
@@ -579,11 +546,7 @@ export default function App() {
             const truck = trucks.find(t => t.id === task.truck);
             const isCompleted = task.status === "completado";
             return (
-              <div key={task.id} style={{
-                background: "#0A1628",
-                border: `1px solid ${isCompleted ? "#1E2D3D" : (TYPE_CONFIG[task.type]?.color + "40") || "#1E2D3D"}`,
-                borderRadius: 16, overflow: "hidden", opacity: isCompleted ? 0.75 : 1
-              }}>
+              <div key={task.id} style={{ background: "#0A1628", border: `1px solid ${isCompleted ? "#1E2D3D" : (TYPE_CONFIG[task.type]?.color + "40") || "#1E2D3D"}`, borderRadius: 16, overflow: "hidden", opacity: isCompleted ? 0.75 : 1 }}>
                 <div style={{ height: 3, background: isCompleted ? "#1E2D3D" : `linear-gradient(90deg, ${TYPE_CONFIG[task.type]?.color}, transparent)` }} />
                 <div style={{ padding: "14px 14px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
@@ -591,44 +554,26 @@ export default function App() {
                     <Badge status={task.status} />
                     {task.time && <span style={{ marginLeft: "auto", color: "#94A3B8", fontSize: 12, fontWeight: 600 }}>🕐 {task.time}</span>}
                   </div>
-
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "#F1F5F9", marginBottom: 4 }}>
-                    {task.client || "Sin cliente"}
-                  </div>
-
-                  {task.address && !task.lat && (
-                    <div style={{ color: "#64748B", fontSize: 13, marginBottom: 6 }}>📍 {task.address}</div>
-                  )}
-
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#F1F5F9", marginBottom: 4 }}>{task.client || "Sin cliente"}</div>
+                  {task.address && !task.lat && <div style={{ color: "#64748B", fontSize: 13, marginBottom: 6 }}>📍 {task.address}</div>}
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
                     {truck && <span style={{ color: "#475569", fontSize: 12 }}>🚛 {truck.driver}</span>}
                     {task.weight && <span style={{ color: "#475569", fontSize: 12 }}>⚖️ {task.weight}</span>}
                     {task.notes && <span style={{ color: "#92400E", fontSize: 12 }}>📝 {task.notes}</span>}
                   </div>
-
-                  {/* Mini map if location saved */}
-                  {task.lat && task.lng && (
-                    <MiniMap lat={parseFloat(task.lat)} lng={parseFloat(task.lng)} address={task.address} />
-                  )}
+                  {task.lat && task.lng && <MiniMap lat={parseFloat(task.lat)} lng={parseFloat(task.lng)} />}
 
                   {!isCompleted && (
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                      <button onClick={() => markComplete(task.id)} style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none", background: "rgba(52,211,153,0.15)", color: "#34D399", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
-                        ✅ Completar
-                      </button>
-                      <button onClick={() => cycleStatus(task)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#94A3B8", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-                        ⟳ Estado
-                      </button>
+                      <button onClick={() => markComplete(task.id)} style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none", background: "rgba(52,211,153,0.15)", color: "#34D399", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>✅ Completar</button>
+                      <button onClick={() => cycleStatus(task)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#94A3B8", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>⟳ Estado</button>
                       <button onClick={() => setModal(task)} style={{ width: 40, padding: "10px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#818CF8", cursor: "pointer", fontSize: 15 }}>✏️</button>
-                      <button onClick={() => setDeleteId(task.id)} style={{ width: 40, padding: "10px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#F87171", cursor: "pointer", fontSize: 15 }}>🗑</button>
+                      {isAdmin && <button onClick={() => setDeleteId(task.id)} style={{ width: 40, padding: "10px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#F87171", cursor: "pointer", fontSize: 15 }}>🗑</button>}
                     </div>
                   )}
-
-                  {isCompleted && (
+                  {isCompleted && isAdmin && (
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                      <button onClick={() => setDeleteId(task.id)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#475569", cursor: "pointer", fontSize: 12 }}>
-                        🗑 Eliminar
-                      </button>
+                      <button onClick={() => setDeleteId(task.id)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #1E2D3D", background: "transparent", color: "#475569", cursor: "pointer", fontSize: 12 }}>🗑 Eliminar</button>
                     </div>
                   )}
                 </div>
@@ -638,16 +583,12 @@ export default function App() {
         </div>
       </div>
 
-      {activeTab === "activas" && (
-        <button onClick={() => setModal("new")} style={{
-          position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: 29,
-          background: "linear-gradient(135deg,#4F46E5,#7C3AED)", border: "none", color: "#fff",
-          fontSize: 28, cursor: "pointer", boxShadow: "0 8px 32px rgba(79,70,229,0.5)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60
-        }}>+</button>
+      {/* FAB solo para admin */}
+      {isAdmin && activeTab === "activas" && (
+        <button onClick={() => setModal("new")} style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: 29, background: "linear-gradient(135deg,#4F46E5,#7C3AED)", border: "none", color: "#fff", fontSize: 28, cursor: "pointer", boxShadow: "0 8px 32px rgba(79,70,229,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>+</button>
       )}
 
-      {modal && <TaskModal task={modal === "new" ? null : modal} onClose={() => setModal(null)} onSave={saveTask} loading={saving} />}
+      {modal && <TaskModal task={modal === "new" ? null : modal} onClose={() => setModal(null)} onSave={saveTask} loading={saving} isAdmin={isAdmin} />}
       {deleteId && <DeleteModal onConfirm={handleDelete} onCancel={() => setDeleteId(null)} loading={saving} />}
     </div>
   );
