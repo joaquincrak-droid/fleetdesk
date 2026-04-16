@@ -386,7 +386,7 @@ function MiniMap({ lat, lng, address }) {
   useEffect(() => {
     if (!ready || !ref.current) return;
     const L = window.L;
-    const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, attributionControl: false }).setView([lat, lng], 15);
+    const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, attributionControl: false, tap: false }).setView([lat, lng], 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
     const icon = L.divIcon({ html: `<div style="font-size:24px;line-height:1">📍</div>`, className: "", iconAnchor: [12, 24], iconSize: [24, 24] });
     L.marker([lat, lng], { icon }).addTo(map);
@@ -398,12 +398,12 @@ function MiniMap({ lat, lng, address }) {
   };
 
   return (
-    <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #1E2D3D", position: "relative" }}>
+    <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #1E2D3D", position: "relative", zIndex: 0 }}>
       <div ref={ref} style={{ height: 130, width: "100%" }} />
       <button
         onClick={openGoogleMaps}
         style={{
-          position: "absolute", bottom: 8, right: 8, zIndex: 1000,
+          position: "absolute", bottom: 8, right: 8, zIndex: 10,
           background: "#4F46E5", border: "none", color: "#fff",
           borderRadius: 8, padding: "6px 12px", cursor: "pointer",
           fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
