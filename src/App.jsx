@@ -5,8 +5,8 @@ const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
 
 const trucks = [
-  { id: "T-01", name: "CamiÃ³n 1", driver: "Miguel" },
-  { id: "T-02", name: "CamiÃ³n 2", driver: "Juan" },
+  { id: "T-01", name: "Camión 1", driver: "Miguel" },
+  { id: "T-02", name: "Camión 2", driver: "Juan" },
 ];
 
 const STATUS_CONFIG = {
@@ -17,11 +17,11 @@ const STATUS_CONFIG = {
 };
 
 const TYPE_CONFIG = {
-  entrega: { label: "Entrega", icon: "â", color: "#818CF8" },
-  recogida: { label: "Recogida", icon: "â", color: "#F472B6" },
+  entrega: { label: "Entrega", icon: "↓", color: "#818CF8" },
+  recogida: { label: "Recogida", icon: "↑", color: "#F472B6" },
 };
 
-// ââ Supabase helpers ââââââââââââââââââââââââââââââââââââââââââ
+// ── Supabase helpers ──────────────────────────────────────────
 async function sbFetch(path, options = {}, token = null) {
   const headers = {
     apikey: SUPABASE_KEY,
@@ -42,11 +42,11 @@ async function authFetch(path, body) {
     body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || data.msg || "Error de autenticaciÃ³n");
+  if (!res.ok) throw new Error(data.error_description || data.msg || "Error de autenticación");
   return data;
 }
 
-// ââ UI helpers ââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── UI helpers ────────────────────────────────────────────────
 function Badge({ status }) {
   const c = STATUS_CONFIG[status] || STATUS_CONFIG.pendiente;
   return (
@@ -110,7 +110,7 @@ const labelStyle = {
   textTransform: "uppercase",
 };
 
-// ââ Leaflet helpers âââââââââââââââââââââââââââââââââââââââââââ
+// ── Leaflet helpers ───────────────────────────────────────────
 function useLeaflet(onReady) {
   useEffect(() => {
     if (window.L) {
@@ -147,7 +147,7 @@ function MiniMap({ lat, lng }) {
     }).setView([lat, lng], 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
     const icon = L.divIcon({
-      html: `<div style="font-size:24px;line-height:1">ð</div>`,
+      html: `<div style="font-size:24px;line-height:1">📍</div>`,
       className: "",
       iconAnchor: [12, 24],
       iconSize: [24, 24],
@@ -188,7 +188,7 @@ function MiniMap({ lat, lng }) {
           boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
         }}
       >
-        ð Navegar
+        🚗 Navegar
       </button>
     </div>
   );
@@ -212,7 +212,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
     if (!mapInstanceRef.current) return;
     if (markerRef.current) markerRef.current.remove();
     const icon = L.divIcon({
-      html: `<div style="font-size:32px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">ð</div>`,
+      html: `<div style="font-size:32px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">📍</div>`,
       className: "",
       iconAnchor: [16, 32],
       iconSize: [32, 32],
@@ -250,7 +250,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
       initialLat ? 16 : 13
     );
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "Â© OpenStreetMap",
+      attribution: "© OpenStreetMap",
       maxZoom: 19,
     }).addTo(map);
     map.on("click", async (e) => {
@@ -281,7 +281,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
       );
       const d = await r.json();
       if (!d.length) {
-        setSearchError("No encontrado. Prueba con mÃ¡s detalle.");
+        setSearchError("No encontrado. Prueba con más detalle.");
         setSearching(false);
         return;
       }
@@ -310,7 +310,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="Busca una direcciÃ³n..."
+            placeholder="Busca una dirección..."
             style={{
               flex: 1,
               padding: "11px 14px",
@@ -337,14 +337,14 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
               fontSize: 14,
             }}
           >
-            {searching ? "..." : "ð"}
+            {searching ? "..." : "🔍"}
           </button>
         </div>
         {searchError && (
           <div style={{ color: "#F87171", fontSize: 12, marginBottom: 4 }}>{searchError}</div>
         )}
         <div style={{ color: "#475569", fontSize: 11 }}>
-          ð¡ Busca o pulsa en el mapa. Puedes arrastrar la chincheta.
+          💡 Busca o pulsa en el mapa. Puedes arrastrar la chincheta.
         </div>
       </div>
       <div style={{ flex: 1, position: "relative" }}>
@@ -378,7 +378,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
               border: "1px solid #1E2D3D",
             }}
           >
-            ð {pickedAddress}
+            📍 {pickedAddress}
           </div>
         )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
@@ -411,7 +411,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
               fontSize: 14,
             }}
           >
-            â Guardar ubicaciÃ³n
+            ✅ Guardar ubicación
           </button>
         </div>
       </div>
@@ -419,7 +419,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
   );
 }
 
-// ââ PDF helpers (jsPDF + DAT) âââââââââââââââââââââââââââââââââ
+// ── PDF helpers (jsPDF + DAT) ─────────────────────────────────
 function loadJsPdf() {
   if (window.jspdf) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -458,25 +458,25 @@ async function generateDAT(task, settings, truck) {
   doc.text("FLEETDESK", M, 7);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.text("GestiÃ³n de rutas y entregas", 210 - M, 7, { align: "right" });
+  doc.text("Gestión de rutas y entregas", 210 - M, 7, { align: "right" });
 
   y = 20;
   doc.setTextColor(20, 30, 50);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text("Documento que acompaÃ±a al transporte", M, y);
+  doc.text("Documento que acompaña al transporte", M, y);
   y += 5;
   doc.setFontSize(10);
   doc.setTextColor(90, 100, 120);
-  doc.text("Residuos no peligrosos Â· Ley 7/2022 Â· RD 553/2020", M, y);
+  doc.text("Residuos no peligrosos · Ley 7/2022 · RD 553/2020", M, y);
   y += 8;
 
-  // Fecha y nÂº
+  // Fecha y nº
   doc.setTextColor(20, 30, 50);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   const shortId = (task.id || "").toString().slice(0, 8).toUpperCase();
-  doc.text(`NÂº documento: DAT-${shortId}`, M, y);
+  doc.text(`Nº documento: DAT-${shortId}`, M, y);
   doc.text(
     `Fecha del transporte: ${fmtDate(task.transport_date || task.created_at)}`,
     210 - M,
@@ -504,38 +504,38 @@ async function generateDAT(task, settings, truck) {
   // Emisor / Transportista (datos de la empresa)
   const emisor = settings || {};
   box("TRANSPORTISTA / EMISOR", [
-    `RazÃ³n social: ${emisor.razon_social || "â"}`,
-    `CIF/NIF: ${emisor.cif || "â"}`,
-    `Domicilio: ${emisor.domicilio || "â"}`,
-    `Tel.: ${emisor.telefono || "â"}    Email: ${emisor.email || "â"}`,
-    `NÂº autorizaciÃ³n transporte: ${emisor.autorizacion || "â"}    NIMA: ${emisor.nima || "â"}`,
-    `Conductor: ${truck ? `${truck.driver} (${truck.id})` : task.truck || "â"}`,
+    `Razón social: ${emisor.razon_social || "—"}`,
+    `CIF/NIF: ${emisor.cif || "—"}`,
+    `Domicilio: ${emisor.domicilio || "—"}`,
+    `Tel.: ${emisor.telefono || "—"}    Email: ${emisor.email || "—"}`,
+    `Nº autorización transporte: ${emisor.autorizacion || "—"}    NIMA: ${emisor.nima || "—"}`,
+    `Conductor: ${truck ? `${truck.driver} (${truck.id})` : task.truck || "—"}`,
   ]);
 
   // Productor / Origen
   box("PRODUCTOR / ORIGEN", [
-    `Nombre / RazÃ³n social: ${task.origin_name || task.client || "â"}`,
-    `CIF/NIF: ${task.origin_cif || "â"}`,
-    `DirecciÃ³n: ${task.origin_address || task.address || "â"}`,
+    `Nombre / Razón social: ${task.origin_name || task.client || "—"}`,
+    `CIF/NIF: ${task.origin_cif || "—"}`,
+    `Dirección: ${task.origin_address || task.address || "—"}`,
   ]);
 
   // Gestor / Destino
   box("GESTOR / DESTINO", [
-    `Nombre gestor: ${task.destination_gestor || "â"}`,
-    `NIMA: ${task.destination_nima || "â"}`,
-    `DirecciÃ³n entrega: ${task.address || "â"}`,
+    `Nombre gestor: ${task.destination_gestor || "—"}`,
+    `NIMA: ${task.destination_nima || "—"}`,
+    `Dirección entrega: ${task.address || "—"}`,
   ]);
 
   // Residuo
   box("RESIDUO", [
-    `CÃ³digo LER: ${task.ler_code || "â"}`,
-    `DescripciÃ³n: ${task.waste_description || "â"}`,
-    `Cantidad: ${task.quantity || task.weight || "â"}`,
-    `Tipo envase: ${task.container_type || "â"}`,
+    `Código LER: ${task.ler_code || "—"}`,
+    `Descripción: ${task.waste_description || "—"}`,
+    `Cantidad: ${task.quantity || task.weight || "—"}`,
+    `Tipo envase: ${task.container_type || "—"}`,
   ]);
 
   // Observaciones
-  box("OBSERVACIONES", [task.notes || "â"]);
+  box("OBSERVACIONES", [task.notes || "—"]);
 
   // Firmas
   y += 4;
@@ -554,7 +554,7 @@ async function generateDAT(task, settings, truck) {
   doc.setFontSize(7);
   doc.setTextColor(120, 130, 150);
   doc.text(
-    "Documento generado con FleetDesk. Conserve una copia mientras dure la operaciÃ³n de transporte.",
+    "Documento generado con FleetDesk. Conserve una copia mientras dure la operación de transporte.",
     M,
     287
   );
@@ -565,7 +565,7 @@ async function generateDAT(task, settings, truck) {
   doc.save(fname);
 }
 
-// ââ Login Screen ââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Login Screen ──────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -574,7 +574,7 @@ function LoginScreen({ onLogin }) {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      setError("Introduce email y contraseÃ±a");
+      setError("Introduce email y contraseña");
       return;
     }
     setLoading(true);
@@ -583,7 +583,7 @@ function LoginScreen({ onLogin }) {
       const data = await authFetch("token?grant_type=password", { email, password });
       onLogin(data.access_token, data.user);
     } catch (e) {
-      setError("Email o contraseÃ±a incorrectos");
+      setError("Email o contraseña incorrectos");
     } finally {
       setLoading(false);
     }
@@ -617,11 +617,11 @@ function LoginScreen({ onLogin }) {
               margin: "0 auto 16px",
             }}
           >
-            ð
+            🚛
           </div>
           <div style={{ fontWeight: 800, fontSize: 26, color: "#F1F5F9" }}>FleetDesk</div>
           <div style={{ color: "#475569", fontSize: 14, marginTop: 4 }}>
-            GestiÃ³n de rutas y entregas
+            Gestión de rutas y entregas
           </div>
         </div>
         <div
@@ -645,14 +645,14 @@ function LoginScreen({ onLogin }) {
               />
             </div>
             <div>
-              <label style={labelStyle}>ContraseÃ±a</label>
+              <label style={labelStyle}>Contraseña</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 style={inp}
-                placeholder="â¢â¢â¢â¢â¢â¢â¢â¢"
+                placeholder="••••••••"
               />
             </div>
           </div>
@@ -686,7 +686,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ââ Task Modal ââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Task Modal ────────────────────────────────────────────────
 function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
   const [form, setForm] = useState(
     task || {
@@ -764,8 +764,8 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                 <div>
                   <label style={labelStyle}>Tipo</label>
                   <select value={form.type} onChange={(e) => set("type", e.target.value)} style={inp}>
-                    <option value="entrega">â Entrega</option>
-                    <option value="recogida">â Recogida</option>
+                    <option value="entrega">↓ Entrega</option>
+                    <option value="recogida">↑ Recogida</option>
                   </select>
                 </div>
                 <div>
@@ -794,12 +794,12 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
               />
             </div>
             <div>
-              <label style={labelStyle}>UbicaciÃ³n</label>
+              <label style={labelStyle}>Ubicación</label>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
                   value={form.address}
                   style={{ ...inp, flex: 1 }}
-                  placeholder="Busca en el mapa â"
+                  placeholder="Busca en el mapa →"
                   readOnly
                 />
                 <button
@@ -818,12 +818,12 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                     flexShrink: 0,
                   }}
                 >
-                  ð
+                  📍
                 </button>
               </div>
               {form.lat && (
                 <div style={{ marginTop: 6, fontSize: 11, color: "#4F46E5" }}>
-                  â UbicaciÃ³n guardada en el mapa
+                  ✓ Ubicación guardada en el mapa
                 </div>
               )}
             </div>
@@ -873,7 +873,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
               />
             </div>
 
-            {/* Datos DAT (Documento que AcompaÃ±a al Transporte) */}
+            {/* Datos DAT (Documento que Acompaña al Transporte) */}
             <button
               type="button"
               onClick={() => setShowDat((s) => !s)}
@@ -893,14 +893,14 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                 fontFamily: "inherit",
               }}
             >
-              <span>ð Datos de residuo / DAT</span>
-              <span>{showDat ? "â²" : "â¼"}</span>
+              <span>📄 Datos de residuo / DAT</span>
+              <span>{showDat ? "▲" : "▼"}</span>
             </button>
             {showDat && (
               <div style={{ display: "grid", gap: 10, padding: "4px 2px 2px" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
-                    <label style={labelStyle}>CÃ³digo LER</label>
+                    <label style={labelStyle}>Código LER</label>
                     <input
                       value={form.ler_code}
                       onChange={(e) => set("ler_code", e.target.value)}
@@ -919,12 +919,12 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                   </div>
                 </div>
                 <div>
-                  <label style={labelStyle}>DescripciÃ³n del residuo</label>
+                  <label style={labelStyle}>Descripción del residuo</label>
                   <input
                     value={form.waste_description}
                     onChange={(e) => set("waste_description", e.target.value)}
                     style={inp}
-                    placeholder="ej. Residuos mezclados de construcciÃ³n"
+                    placeholder="ej. Residuos mezclados de construcción"
                   />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -934,7 +934,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                       value={form.container_type}
                       onChange={(e) => set("container_type", e.target.value)}
                       style={inp}
-                      placeholder="ej. Contenedor 5 mÂ³"
+                      placeholder="ej. Contenedor 5 m³"
                     />
                   </div>
                   <div>
@@ -951,7 +951,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                   PRODUCTOR (origen)
                 </div>
                 <div>
-                  <label style={labelStyle}>Nombre / RazÃ³n social</label>
+                  <label style={labelStyle}>Nombre / Razón social</label>
                   <input
                     value={form.origin_name}
                     onChange={(e) => set("origin_name", e.target.value)}
@@ -966,7 +966,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                       value={form.origin_address}
                       onChange={(e) => set("origin_address", e.target.value)}
                       style={inp}
-                      placeholder="DirecciÃ³n del origen"
+                      placeholder="Dirección del origen"
                     />
                   </div>
                   <div>
@@ -1092,9 +1092,9 @@ function DeleteModal({ onConfirm, onCancel, loading }) {
             margin: "0 auto 20px",
           }}
         />
-        <div style={{ fontSize: 36, marginBottom: 10 }}>ðï¸</div>
+        <div style={{ fontSize: 36, marginBottom: 10 }}>🗑️</div>
         <div style={{ fontWeight: 700, fontSize: 17, color: "#E2E8F0", marginBottom: 6 }}>
-          Â¿Eliminar tarea?
+          ¿Eliminar tarea?
         </div>
         <div style={{ color: "#475569", fontSize: 13, marginBottom: 24 }}>No se puede deshacer</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1135,7 +1135,7 @@ function DeleteModal({ onConfirm, onCancel, loading }) {
   );
 }
 
-// ââ Settings Screen âââââââââââââââââââââââââââââââââââââââââââ
+// ── Settings Screen ───────────────────────────────────────────
 function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
   const [form, setForm] = useState({
     razon_social: settings?.razon_social || "",
@@ -1161,7 +1161,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
         Ajustes de la empresa
       </h2>
       <p style={{ color: "#64748B", fontSize: 13, marginTop: 0 }}>
-        Estos datos aparecerÃ¡n en los Documentos de AcompaÃ±amiento del Transporte (DAT) que
+        Estos datos aparecerán en los Documentos de Acompañamiento del Transporte (DAT) que
         generes desde cada tarea.
       </p>
 
@@ -1177,7 +1177,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
         }}
       >
         <div>
-          <label style={labelStyle}>RazÃ³n social</label>
+          <label style={labelStyle}>Razón social</label>
           <input
             value={form.razon_social}
             onChange={(e) => set("razon_social", e.target.value)}
@@ -1198,7 +1198,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
             />
           </div>
           <div>
-            <label style={labelStyle}>TelÃ©fono</label>
+            <label style={labelStyle}>Teléfono</label>
             <input
               value={form.telefono}
               onChange={(e) => set("telefono", e.target.value)}
@@ -1214,7 +1214,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
             value={form.domicilio}
             onChange={(e) => set("domicilio", e.target.value)}
             style={inp}
-            placeholder="Calle, nÃºmero, CP, localidad, provincia"
+            placeholder="Calle, número, CP, localidad, provincia"
             disabled={!isAdmin}
           />
         </div>
@@ -1240,7 +1240,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
             />
           </div>
           <div>
-            <label style={labelStyle}>NÂº autorizaciÃ³n transportista</label>
+            <label style={labelStyle}>Nº autorización transportista</label>
             <input
               value={form.autorizacion}
               onChange={(e) => set("autorizacion", e.target.value)}
@@ -1288,7 +1288,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
                 fontFamily: "inherit",
               }}
             >
-              {saving ? "Guardando..." : saved ? "â Guardado" : "Guardar ajustes"}
+              {saving ? "Guardando..." : saved ? "✓ Guardado" : "Guardar ajustes"}
             </button>
           </div>
         )}
@@ -1302,7 +1302,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
   );
 }
 
-// ââ Main App ââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Main App ──────────────────────────────────────────────────
 export default function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -1385,7 +1385,7 @@ export default function App() {
       setCompleted(done || []);
       setSettings(sett?.[0] || null);
     } catch (e) {
-      setError("Error al cargar. Comprueba tu conexiÃ³n.");
+      setError("Error al cargar. Comprueba tu conexión.");
     } finally {
       setLoading(false);
     }
@@ -1406,7 +1406,7 @@ export default function App() {
       ];
       const clean = {};
       for (const k of ALLOWED) clean[k] = data[k] ?? null;
-      // upsert vÃ­a PATCH (la fila ya existe con id=1 por la migraciÃ³n)
+      // upsert vía PATCH (la fila ya existe con id=1 por la migración)
       await sbFetch(
         "settings?id=eq.1",
         { method: "PATCH", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
@@ -1424,9 +1424,9 @@ export default function App() {
     setSaving(true);
     setError(null);
     try {
-      // SÃ³lo mandamos columnas conocidas de `tasks`. Evita que campos extra
+      // Sólo mandamos columnas conocidas de `tasks`. Evita que campos extra
       // (updated_at, user_id, created_at, etc.) viajen en PATCH/POST.
-      const ALLOWED = [
+      const CORE = [
         "type",
         "truck",
         "client",
@@ -1437,7 +1437,10 @@ export default function App() {
         "status",
         "weight",
         "notes",
-        // Campos DAT (Documento que AcompaÃ±a al Transporte de residuos)
+      ];
+      // Campos DAT: solo se mandan si tienen valor, para no romper
+      // cuando la BD aún no tiene esas columnas.
+      const DAT = [
         "ler_code",
         "waste_description",
         "quantity",
@@ -1451,14 +1454,12 @@ export default function App() {
       ];
 
       const clean = {};
-      for (const k of ALLOWED) {
+      for (const k of CORE) {
         const v = form[k];
         if (k === "lat" || k === "lng") {
-          // NÃºmeros; "" Ã³ undefined -> null
           const n = v === "" || v == null ? null : Number(v);
           clean[k] = Number.isFinite(n) ? n : null;
-        } else if (k === "time" || k === "transport_date") {
-          // Columnas Postgres tipadas (time / date): "" rompe -> null
+        } else if (k === "time") {
           clean[k] = v ? v : null;
         } else if (k === "weight") {
           clean[k] = v === "" || v == null ? null : v;
@@ -1467,6 +1468,11 @@ export default function App() {
         } else {
           clean[k] = v == null || v === "" ? null : v;
         }
+      }
+      for (const k of DAT) {
+        const v = form[k];
+        if (v == null || v === "") continue; // omitir si vacío
+        clean[k] = v;
       }
 
       const { id } = form;
@@ -1572,7 +1578,7 @@ export default function App() {
     if (sortBy === "cliente") {
       return (a.client || "").localeCompare(b.client || "");
     }
-    // recientes: por created_at desc (ya vienen asÃ­ del server, pero por seguridad)
+    // recientes: por created_at desc (ya vienen así del server, pero por seguridad)
     return (b.created_at || "").localeCompare(a.created_at || "");
   };
 
@@ -1629,7 +1635,7 @@ export default function App() {
               fontFamily: "inherit",
             }}
           >
-            â
+            ←
           </button>
           <div style={{ fontWeight: 800, fontSize: 16 }}>Ajustes</div>
         </div>
@@ -1686,7 +1692,7 @@ export default function App() {
                 fontSize: 16,
               }}
             >
-              ð
+              🚛
             </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>FleetDesk</div>
@@ -1698,7 +1704,7 @@ export default function App() {
                   fontWeight: 600,
                 }}
               >
-                {isAdmin ? "ð Administrador" : "ð Conductor"}
+                {isAdmin ? "👑 Administrador" : "🚛 Conductor"}
               </div>
             </div>
           </div>
@@ -1718,7 +1724,7 @@ export default function App() {
                 fontFamily: "inherit",
               }}
             >
-              â»
+              ↻
             </button>
             <button
               onClick={() => setView("ajustes")}
@@ -1735,11 +1741,11 @@ export default function App() {
                 fontFamily: "inherit",
               }}
             >
-              âï¸
+              ⚙️
             </button>
             <button
               onClick={handleLogout}
-              title="Cerrar sesiÃ³n"
+              title="Cerrar sesión"
               style={{
                 background: "#1E2D3D",
                 border: "none",
@@ -1752,7 +1758,7 @@ export default function App() {
                 fontFamily: "inherit",
               }}
             >
-              ðª
+              🚪
             </button>
           </div>
         </div>
@@ -1834,7 +1840,7 @@ export default function App() {
           <input
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="ð Buscar por cliente, direcciÃ³n, LER, notas..."
+            placeholder="🔎 Buscar por cliente, dirección, LER, notas..."
             style={{
               width: "100%",
               padding: "11px 14px 11px 14px",
@@ -1863,7 +1869,7 @@ export default function App() {
                 fontSize: 16,
               }}
             >
-              Ã
+              ×
             </button>
           )}
         </div>
@@ -1985,27 +1991,27 @@ export default function App() {
                 fontSize: 18,
               }}
             >
-              Ã
+              ×
             </button>
           </div>
         )}
 
         {loading && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "#475569" }}>
-            <div style={{ fontSize: 30, marginBottom: 10 }}>â³</div>
+            <div style={{ fontSize: 30, marginBottom: 10 }}>⏳</div>
             <div style={{ fontSize: 14 }}>Cargando...</div>
           </div>
         )}
 
         {!loading && filtered.length === 0 && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155" }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>ð­</div>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>
               {activeTab === "activas" ? "No hay tareas activas" : "No hay tareas completadas"}
             </div>
             {activeTab === "activas" && isAdmin && (
               <div style={{ fontSize: 13, marginTop: 6, color: "#1E2D3D" }}>
-                Pulsa + para aÃ±adir una
+                Pulsa + para añadir una
               </div>
             )}
           </div>
@@ -2059,7 +2065,7 @@ export default function App() {
                           fontWeight: 600,
                         }}
                       >
-                        ð {task.time}
+                        🕐 {task.time}
                       </span>
                     )}
                   </div>
@@ -2075,7 +2081,7 @@ export default function App() {
                   </div>
                   {task.address && !task.lat && (
                     <div style={{ color: "#64748B", fontSize: 13, marginBottom: 6 }}>
-                      ð {task.address}
+                      📍 {task.address}
                     </div>
                   )}
                   <div
@@ -2087,13 +2093,13 @@ export default function App() {
                     }}
                   >
                     {truck && (
-                      <span style={{ color: "#475569", fontSize: 12 }}>ð {truck.driver}</span>
+                      <span style={{ color: "#475569", fontSize: 12 }}>🚛 {truck.driver}</span>
                     )}
                     {task.weight && (
-                      <span style={{ color: "#475569", fontSize: 12 }}>âï¸ {task.weight}</span>
+                      <span style={{ color: "#475569", fontSize: 12 }}>⚖️ {task.weight}</span>
                     )}
                     {task.notes && (
-                      <span style={{ color: "#92400E", fontSize: 12 }}>ð {task.notes}</span>
+                      <span style={{ color: "#92400E", fontSize: 12 }}>📝 {task.notes}</span>
                     )}
                   </div>
                   {task.lat && task.lng && (
@@ -2117,7 +2123,7 @@ export default function App() {
                           fontFamily: "inherit",
                         }}
                       >
-                        â Completar
+                        ✅ Completar
                       </button>
                       <button
                         onClick={() => cycleStatus(task)}
@@ -2135,7 +2141,7 @@ export default function App() {
                           fontFamily: "inherit",
                         }}
                       >
-                        â³ Estado
+                        ⟳ Estado
                       </button>
                       <button
                         onClick={() =>
@@ -2156,7 +2162,7 @@ export default function App() {
                           fontFamily: "inherit",
                         }}
                       >
-                        ð
+                        📄
                       </button>
                       <button
                         onClick={() => setModal(task)}
@@ -2172,7 +2178,7 @@ export default function App() {
                           fontFamily: "inherit",
                         }}
                       >
-                        âï¸
+                        ✏️
                       </button>
                       {isAdmin && (
                         <button
@@ -2189,7 +2195,7 @@ export default function App() {
                             fontFamily: "inherit",
                           }}
                         >
-                          ð
+                          🗑
                         </button>
                       )}
                     </div>
@@ -2220,7 +2226,7 @@ export default function App() {
                           fontFamily: "inherit",
                         }}
                       >
-                        ð DAT
+                        📄 DAT
                       </button>
                       {isAdmin && (
                         <button
@@ -2236,7 +2242,7 @@ export default function App() {
                             fontFamily: "inherit",
                           }}
                         >
-                          ð Eliminar
+                          🗑 Eliminar
                         </button>
                       )}
                     </div>
