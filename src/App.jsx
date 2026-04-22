@@ -533,13 +533,13 @@ async function generateDAT(task, settings, truck) {
     `Dirección: ${task.origin_address || task.address || "—"}`,
   ]);
 
-  // Gestor / Destino
+  // Gestor / Destino (RECIPALETS como fallback si la tarea antigua no tiene los datos)
   box("GESTOR / DESTINO", [
-    `Nombre gestor: ${task.destination_gestor || "—"}`,
-    `CIF/NIF: ${task.destination_cif || "—"}`,
-    `Domicilio: ${task.destination_address || "—"}`,
-    `NIMA: ${task.destination_nima || "—"}`,
-    `Tel.: ${task.destination_phone || "—"}    Email: ${task.destination_email || "—"}`,
+    `Nombre gestor: ${task.destination_gestor || "RECIPALETS TOTANA S.L."}`,
+    `CIF/NIF: ${task.destination_cif || "B73384059"}`,
+    `Domicilio: ${task.destination_address || "Autovía del Mediterráneo Km 609, 30850 TOTANA (Murcia)"}`,
+    `NIMA: ${task.destination_nima || "3020143940"}`,
+    `Tel.: ${task.destination_phone || "637543518"}    Email: ${task.destination_email || "medioambiente@jcpalets.com"}`,
   ]);
 
   // Residuo
@@ -553,18 +553,37 @@ async function generateDAT(task, settings, truck) {
   // Observaciones
   box("OBSERVACIONES", [task.notes || "—"]);
 
-  // Firmas
+  // Firmas (en la de transportista estampamos el sello RECIPALETS)
   y += 4;
   const colW = (W - 6) / 2;
+  const firmaH = 34;
   ["Firma productor", "Firma transportista"].forEach((label, i) => {
     const x = M + (colW + 6) * i;
     doc.setDrawColor(200, 205, 215);
-    doc.rect(x, y, colW, 24);
+    doc.rect(x, y, colW, firmaH);
     doc.setFontSize(8);
     doc.setTextColor(100, 110, 130);
     doc.text(label, x + 3, y + 5);
+    if (i === 1) {
+      // Sello azul estilo estampado real
+      const cx = x + colW / 2;
+      doc.setTextColor(25, 55, 155);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("RECIPALETS TOTANA S.L.", cx, y + 13, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text("C.I.F.: B-73384059", cx, y + 17, { align: "center" });
+      doc.text("Autovía del Mediterráneo Km 609", cx, y + 21, { align: "center" });
+      doc.text("30850 TOTANA (Murcia)", cx, y + 25, { align: "center" });
+      doc.text("Tlf. +34 637 54 35 18", cx, y + 29, { align: "center" });
+      // Reset de estilos para el resto del PDF
+      doc.setTextColor(30, 40, 60);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+    }
   });
-  y += 30;
+  y += firmaH + 6;
 
   // Pie
   doc.setFontSize(7);
