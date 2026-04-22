@@ -515,13 +515,14 @@ async function generateDAT(task, settings, truck) {
   };
 
   // Emisor / Transportista (datos de la empresa)
+  // Si la tabla settings está vacía usamos los datos fijos de RECIPALETS TOTANA S.L.
   const emisor = settings || {};
   box("TRANSPORTISTA / EMISOR", [
-    `Razón social: ${emisor.razon_social || "—"}`,
-    `CIF/NIF: ${emisor.cif || "—"}`,
-    `Domicilio: ${emisor.domicilio || "—"}`,
-    `Tel.: ${emisor.telefono || "—"}    Email: ${emisor.email || "—"}`,
-    `Nº autorización transporte: ${emisor.autorizacion || "—"}    NIMA: ${emisor.nima || "—"}`,
+    `Razón social: ${emisor.razon_social || "RECIPALETS TOTANA S.L."}`,
+    `CIF/NIF: ${emisor.cif || "B73384059"}`,
+    `Domicilio: ${emisor.domicilio || "Autovía del Mediterráneo KM 609"}`,
+    `Tel.: ${emisor.telefono || "637543518"}    Email: ${emisor.email || "medioambiente@jcpalets.com"}`,
+    `NIMA: ${emisor.nima || "3020143940"}`,
     `Conductor: ${truck ? `${truck.driver} (${truck.id})` : task.truck || "—"}`,
   ]);
 
