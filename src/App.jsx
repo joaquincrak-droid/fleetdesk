@@ -1483,6 +1483,8 @@ export default function App() {
           token
         );
       } else {
+        // Para satisfacer RLS: asignar user_id al creador.
+        if (user?.id) clean.user_id = user.id;
         await sbFetch(
           "tasks",
           { method: "POST", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
