@@ -21,6 +21,19 @@ const TYPE_CONFIG = {
   recogida: { label: "Recogida", icon: "↑", color: "#F472B6" },
 };
 
+// Datos fijos de la empresa gestora para tareas de RECOGIDA.
+// Se rellenan automáticamente al seleccionar tipo = recogida.
+const RECOGIDA_DEFAULTS = {
+  ler_code: "150103",
+  waste_description: "Palets rotos de madera",
+  destination_gestor: "RECIPALETS TOTANA S.L.",
+  destination_cif: "B73384059",
+  destination_address: "Autovía del Mediterráneo KM 609",
+  destination_nima: "3020143940",
+  destination_phone: "637543518",
+  destination_email: "medioambiente@jcpalets.com",
+};
+
 // ── Supabase helpers ──────────────────────────────────────────
 async function sbFetch(path, options = {}, token = null) {
   const headers = {
@@ -522,8 +535,10 @@ async function generateDAT(task, settings, truck) {
   // Gestor / Destino
   box("GESTOR / DESTINO", [
     `Nombre gestor: ${task.destination_gestor || "—"}`,
+    `CIF/NIF: ${task.destination_cif || "—"}`,
+    `Domicilio: ${task.destination_address || "—"}`,
     `NIMA: ${task.destination_nima || "—"}`,
-    `Dirección entrega: ${task.address || "—"}`,
+    `Tel.: ${task.destination_phone || "—"}    Email: ${task.destination_email || "—"}`,
   ]);
 
   // Residuo
@@ -716,6 +731,22 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
   const [showMap, setShowMap] = useState(false);
   const [showDat, setShowDat] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Autocompletar DAT cuando el tipo es "recogida".
+  // Solo rellena campos vacíos (no pisa lo que el usuario haya escrito).
+  useEffect(() => {
+    if (form.type !== "recogida") return;
+    setForm((f) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const next = { ...f };
+      let touched = false;
+      for (const [k, v] of Object.entries(RECOGIDA_DEFAULTS)) {
+        if (!next[k]) { next[k] = v; touched = true; }
+      }
+      if (!next.transport_date) { next.transport_date = today; touched = true; }
+      return touched ? next : f;
+    });
+  }, [form.type]);
 
   return (
     <>
