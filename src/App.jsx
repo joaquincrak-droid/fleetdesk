@@ -758,7 +758,7 @@ function LoginScreen({ onLogin }) {
 }
 
 // ── Task Modal ────────────────────────────────────────────────
-function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], onSaveOperator }) {
+function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], onSaveOperator, onNextDi }) {
   const [form, setForm] = useState(
     task || {
       type: "entrega",
@@ -841,6 +841,26 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], on
       return touched ? next : f;
     });
   }, [form.type]);
+
+  // Genera Nº DI en vivo cuando cambia el NIMA (o NIF) del operador del traslado.
+  // Lo ve el chófer en el campo al instante, con formato NIMA/AAAA/NNNNNNN.
+  useEffect(() => {
+    if (form.type !== "recogida") return;
+    const nima = form.origin_nima || form.origin_nif;
+    if (!nima) return;
+    const year = new Date().getFullYear();
+    const expectedPrefix = `${nima}/${year}/`;
+    const cur = form.di_number || "";
+    const ok = cur.startsWith(expectedPrefix) && /\/\d{7}$/.test(cur);
+    if (ok) return;
+    let cancelled = false;
+    (async () => {
+      if (typeof onNextDi !== "function") return;
+      const di = await onNextDi(nima);
+      if (!cancelled && di) setForm((f) => ({ ...f, di_number: di }));
+    })();
+    return () => { cancelled = true; };
+  }, [form.type, form.origin_nima, form.origin_nif]);
 
   const suggestions = (() => {
     const q = (operatorQuery || "").trim().toLowerCase();
@@ -1891,17 +1911,20 @@ export default function App() {
     if (!nima) return null;
     const year = new Date().getFullYear();
     const prefix = `${nima}/${year}/`;
+    // PostgREST admite * como comodín en ilike — más fiable que % escapado.
+    const filter = encodeURIComponent(`${prefix}*`);
     try {
       const rows = await sbFetch(
-        `tasks?di_number=like.${encodeURIComponent(prefix)}%25&select=di_number&order=di_number.desc&limit=1`,
+        `tasks?di_number=ilike.${filter}&select=di_number&order=di_number.desc&limit=50`,
         {},
         token
       );
       let n = 0;
       if (rows && rows.length) {
-        const last = rows[0].di_number || "";
-        const m = last.match(/\/(\d+)$/);
-        if (m) n = parseInt(m[1], 10);
+        for (const r of rows) {
+          const m = (r.di_number || "").match(/\/(\d+)$/);
+          if (m) { const v = parseInt(m[1], 10); if (v > n) n = v; }
+        }
       }
       const next = String(n + 1).padStart(7, "0");
       return `${prefix}${next}`;
@@ -1955,11 +1978,19 @@ export default function App() {
         "end_date",
       ];
 
-      // Auto-generar Nº DI para recogidas si hay NIMA de origen y no está asignado
-      if (form.type === "recogida" && !form.di_number && (form.origin_nima || form.origin_nif)) {
+      // Auto-generar Nº DI para recogidas con formato NIMA/AAAA/NNNNNNN.
+      // También sobrescribe DIs antiguos tipo "DAT-XXXXXXXX" o cualquier
+      // valor que no siga el formato pedido, siempre que haya NIMA/NIF.
+      if (form.type === "recogida" && (form.origin_nima || form.origin_nif)) {
         const nima = form.origin_nima || form.origin_nif;
-        const di = await nextDiNumber(nima);
-        if (di) form.di_number = di;
+        const year = new Date().getFullYear();
+        const expectedPrefix = `${nima}/${year}/`;
+        const cur = form.di_number || "";
+        const ok = cur.startsWith(expectedPrefix) && /\/\d{7}$/.test(cur);
+        if (!ok) {
+          const di = await nextDiNumber(nima);
+          if (di) form.di_number = di;
+        }
       }
 
       const clean = {};
@@ -2801,6 +2832,7 @@ export default function App() {
           isAdmin={isAdmin}
           operators={operators}
           onSaveOperator={saveOperator}
+          onNextDi={nextDiNumber}
         />
       )}
       {deleteId && (
