@@ -26,6 +26,7 @@ const TYPE_CONFIG = {
 const RECOGIDA_DEFAULTS = {
   ler_code: "150103",
   waste_description: "Palets rotos de madera",
+  container_type: "Palets de madera rotos",
   destination_gestor: "RECIPALETS TOTANA S.L.",
   destination_cif: "B73384059",
   destination_address: "Autovía del Mediterráneo KM 609",
@@ -547,7 +548,7 @@ async function generateDAT(task, settings, truck) {
     `Código LER: ${task.ler_code || "—"}`,
     `Descripción: ${task.waste_description || "—"}`,
     `Cantidad: ${task.quantity || task.weight || "—"}`,
-    `Tipo envase: ${task.container_type || "—"}`,
+    `Tipo envase: ${task.container_type || "Palets de madera rotos"}`,
   ]);
 
   // Observaciones
