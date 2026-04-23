@@ -485,19 +485,31 @@ async function generateDAT(task, settings, truck) {
   doc.text("Residuos no peligrosos · Ley 7/2022 · RD 553/2020", M, y);
   y += 8;
 
-  // Fecha y nº
+  // Fecha y nº DI
   doc.setTextColor(20, 30, 50);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   const shortId = (task.id || "").toString().slice(0, 8).toUpperCase();
-  doc.text(`Nº documento: DAT-${shortId}`, M, y);
+  const diNumber = task.di_number || `DAT-${shortId}`;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Documento de Identificación nº: ${diNumber}`, M, y);
+  doc.setFont("helvetica", "normal");
   doc.text(
     `Fecha del transporte: ${fmtDate(task.transport_date || task.created_at)}`,
     210 - M,
     y,
     { align: "right" }
   );
-  y += 8;
+  y += 5;
+  if (task.start_date || task.end_date) {
+    doc.text(
+      `Inicio: ${fmtDate(task.start_date) || "—"}    Fin: ${fmtDate(task.end_date) || "—"}`,
+      M,
+      y
+    );
+    y += 5;
+  }
+  y += 3;
 
   const box = (title, lines) => {
     doc.setDrawColor(220, 225, 235);
@@ -527,11 +539,34 @@ async function generateDAT(task, settings, truck) {
     `Conductor: ${truck ? `${truck.driver} (${truck.id})` : task.truck || "—"}`,
   ]);
 
-  // Productor / Origen
-  box("PRODUCTOR / ORIGEN", [
-    `Nombre / Razón social: ${task.origin_name || task.client || "—"}`,
-    `CIF/NIF: ${task.origin_cif || "—"}`,
-    `Dirección: ${task.origin_address || task.address || "—"}`,
+  // Operador del traslado (productor del residuo)
+  const opNif = task.origin_nif || task.origin_cif || "—";
+  const opNima = task.origin_nima || "—";
+  const opInsc = task.origin_nro_inscripcion || "—";
+  const opTipo = task.origin_tipo_operador || "—";
+  const opAddr = task.origin_address || task.address || "—";
+  const opCp = task.origin_cp || "—";
+  const opMun = task.origin_municipio || "—";
+  const opProv = task.origin_provincia || "—";
+  const opTel = task.origin_telefono || "—";
+  const opMail = task.origin_email || "—";
+  const opName = task.origin_name || task.client || "—";
+
+  box("INFORMACIÓN RELATIVA AL OPERADOR DEL TRASLADO", [
+    `NIF: ${opNif}    Razón social: ${opName}`,
+    `NIMA: ${opNima}    Nº inscripción: ${opInsc}    Tipo operador: ${opTipo}`,
+    `Dirección: ${opAddr}    C.P.: ${opCp}`,
+    `Municipio: ${opMun}    Provincia: ${opProv}`,
+    `Teléfono: ${opTel}    Email: ${opMail}`,
+  ]);
+
+  // Origen del traslado (mismos datos)
+  box("INFORMACIÓN RELATIVA AL ORIGEN DEL TRASLADO", [
+    `NIF: ${opNif}    Razón social: ${opName}`,
+    `NIMA: ${opNima}    Nº inscripción: ${opInsc}    Tipo centro productor: ${opTipo}`,
+    `Dirección: ${opAddr}    C.P.: ${opCp}`,
+    `Municipio: ${opMun}    Provincia: ${opProv}`,
+    `Teléfono: ${opTel}    Email: ${opMail}`,
   ]);
 
   // Gestor / Destino (RECIPALETS como fallback si la tarea antigua no tiene los datos)
@@ -723,7 +758,7 @@ function LoginScreen({ onLogin }) {
 }
 
 // ── Task Modal ────────────────────────────────────────────────
-function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
+function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], onSaveOperator }) {
   const [form, setForm] = useState(
     task || {
       type: "entrega",
@@ -744,14 +779,50 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
       origin_name: "",
       origin_address: "",
       origin_cif: "",
+      origin_nif: "",
+      origin_nima: "",
+      origin_nro_inscripcion: "",
+      origin_tipo_operador: "",
+      origin_cp: "",
+      origin_municipio: "",
+      origin_provincia: "",
+      origin_telefono: "",
+      origin_email: "",
       destination_gestor: "",
       destination_nima: "",
       transport_date: "",
+      di_number: "",
+      start_date: "",
+      end_date: "",
     }
   );
   const [showMap, setShowMap] = useState(false);
   const [showDat, setShowDat] = useState(false);
+  const [showOperator, setShowOperator] = useState(false);
+  const [operatorQuery, setOperatorQuery] = useState(form.origin_name || "");
+  const [showSuggest, setShowSuggest] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Aplica los datos de un operador seleccionado al formulario (origen + operador)
+  const applyOperator = (op) => {
+    setForm((f) => ({
+      ...f,
+      origin_name: op.razon_social || "",
+      origin_nif: op.cif || "",
+      origin_cif: op.cif || "",
+      origin_nima: op.nima || "",
+      origin_nro_inscripcion: op.nro_inscripcion || "",
+      origin_tipo_operador: op.tipo_operador || "",
+      origin_address: op.direccion || "",
+      origin_cp: op.cp || "",
+      origin_municipio: op.municipio || "",
+      origin_provincia: op.provincia || "",
+      origin_telefono: op.telefono || "",
+      origin_email: op.email || "",
+    }));
+    setOperatorQuery(op.razon_social || "");
+    setShowSuggest(false);
+  };
 
   // Autocompletar DAT cuando el tipo es "recogida".
   // Solo rellena campos vacíos (no pisa lo que el usuario haya escrito).
@@ -765,9 +836,19 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
         if (!next[k]) { next[k] = v; touched = true; }
       }
       if (!next.transport_date) { next.transport_date = today; touched = true; }
+      if (!next.start_date) { next.start_date = today; touched = true; }
+      if (!next.end_date) { next.end_date = today; touched = true; }
       return touched ? next : f;
     });
   }, [form.type]);
+
+  const suggestions = (() => {
+    const q = (operatorQuery || "").trim().toLowerCase();
+    if (!q) return [];
+    return (operators || [])
+      .filter((o) => (o.razon_social || "").toLowerCase().includes(q))
+      .slice(0, 6);
+  })();
 
   return (
     <>
@@ -1000,36 +1081,197 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
                   </div>
                 </div>
                 <div style={{ marginTop: 4, fontSize: 11, color: "#475569", fontWeight: 600 }}>
-                  PRODUCTOR (origen)
+                  OPERADOR / ORIGEN (productor del residuo)
                 </div>
-                <div>
+                <div style={{ position: "relative" }}>
                   <label style={labelStyle}>Nombre / Razón social</label>
                   <input
-                    value={form.origin_name}
-                    onChange={(e) => set("origin_name", e.target.value)}
+                    value={operatorQuery}
+                    onChange={(e) => {
+                      setOperatorQuery(e.target.value);
+                      set("origin_name", e.target.value);
+                      setShowSuggest(true);
+                    }}
+                    onFocus={() => setShowSuggest(true)}
+                    onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
                     style={inp}
-                    placeholder="Empresa o particular origen"
+                    placeholder="Escribe para buscar empresa…"
+                    autoComplete="off"
                   />
+                  {showSuggest && suggestions.length > 0 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        background: "#0F1E33",
+                        border: "1px solid #1E2D3D",
+                        borderRadius: 10,
+                        marginTop: 4,
+                        maxHeight: 200,
+                        overflowY: "auto",
+                        zIndex: 10,
+                      }}
+                    >
+                      {suggestions.map((op) => (
+                        <div
+                          key={op.id}
+                          onMouseDown={(e) => { e.preventDefault(); applyOperator(op); }}
+                          style={{
+                            padding: "10px 12px",
+                            cursor: "pointer",
+                            borderBottom: "1px solid #1E2D3D",
+                            color: "#E2E8F0",
+                            fontSize: 13,
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>{op.razon_social}</div>
+                          <div style={{ fontSize: 11, color: "#64748B" }}>
+                            {[op.cif, op.nima, op.municipio].filter(Boolean).join(" · ")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+                <div style={{ textAlign: "right", marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowOperator(true)}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid #1E2D3D",
+                      color: "#818CF8",
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Nuevo operador
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
-                    <label style={labelStyle}>Domicilio</label>
+                    <label style={labelStyle}>NIF / CIF</label>
                     <input
-                      value={form.origin_address}
-                      onChange={(e) => set("origin_address", e.target.value)}
-                      style={inp}
-                      placeholder="Dirección del origen"
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>CIF / NIF</label>
-                    <input
-                      value={form.origin_cif}
-                      onChange={(e) => set("origin_cif", e.target.value)}
+                      value={form.origin_nif || form.origin_cif || ""}
+                      onChange={(e) => { set("origin_nif", e.target.value); set("origin_cif", e.target.value); }}
                       style={inp}
                       placeholder="B12345678"
                     />
                   </div>
+                  <div>
+                    <label style={labelStyle}>NIMA</label>
+                    <input
+                      value={form.origin_nima || ""}
+                      onChange={(e) => set("origin_nima", e.target.value)}
+                      style={inp}
+                      placeholder="NIMA del operador"
+                    />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Nº inscripción</label>
+                    <input
+                      value={form.origin_nro_inscripcion || ""}
+                      onChange={(e) => set("origin_nro_inscripcion", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Tipo operador</label>
+                    <input
+                      value={form.origin_tipo_operador || ""}
+                      onChange={(e) => set("origin_tipo_operador", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Dirección</label>
+                  <input
+                    value={form.origin_address}
+                    onChange={(e) => set("origin_address", e.target.value)}
+                    style={inp}
+                    placeholder="Dirección del origen"
+                  />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 2fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>C.P.</label>
+                    <input
+                      value={form.origin_cp || ""}
+                      onChange={(e) => set("origin_cp", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Municipio</label>
+                    <input
+                      value={form.origin_municipio || ""}
+                      onChange={(e) => set("origin_municipio", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Provincia</label>
+                    <input
+                      value={form.origin_provincia || ""}
+                      onChange={(e) => set("origin_provincia", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Teléfono</label>
+                    <input
+                      value={form.origin_telefono || ""}
+                      onChange={(e) => set("origin_telefono", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      value={form.origin_email || ""}
+                      onChange={(e) => set("origin_email", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Fecha inicio</label>
+                    <input
+                      type="date"
+                      value={form.start_date || ""}
+                      onChange={(e) => set("start_date", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Fecha fin</label>
+                    <input
+                      type="date"
+                      value={form.end_date || ""}
+                      onChange={(e) => set("end_date", e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Nº documento (DI)</label>
+                  <input
+                    value={form.di_number || ""}
+                    onChange={(e) => set("di_number", e.target.value)}
+                    style={inp}
+                    placeholder="Se genera automáticamente al guardar"
+                  />
                 </div>
                 <div style={{ marginTop: 4, fontSize: 11, color: "#475569", fontWeight: 600 }}>
                   GESTOR DESTINO
@@ -1104,7 +1346,151 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin }) {
           onClose={() => setShowMap(false)}
         />
       )}
+      {showOperator && (
+        <OperatorModal
+          onClose={() => setShowOperator(false)}
+          onSave={async (op) => {
+            try {
+              await onSaveOperator(op);
+              applyOperator(op);
+              setShowOperator(false);
+            } catch (e) {
+              alert("Error al guardar operador: " + (e.message || e));
+            }
+          }}
+          initialName={operatorQuery}
+        />
+      )}
     </>
+  );
+}
+
+// ── Operator Modal (alta rápida) ─────────────────────────────
+function OperatorModal({ onClose, onSave, initialName }) {
+  const [op, setOp] = useState({
+    razon_social: initialName || "",
+    cif: "",
+    nima: "",
+    nro_inscripcion: "",
+    tipo_operador: "",
+    direccion: "",
+    cp: "",
+    municipio: "",
+    provincia: "",
+    telefono: "",
+    email: "",
+  });
+  const set = (k, v) => setOp((o) => ({ ...o, [k]: v }));
+  const inp = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #1E2D3D",
+    background: "#0F1E33",
+    color: "#E2E8F0",
+    fontSize: 13,
+    fontFamily: "inherit",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+  const labelStyle = { fontSize: 11, color: "#64748B", fontWeight: 600, marginBottom: 4, display: "block" };
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)", zIndex: 200, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", marginBottom: 14 }}>
+          Nuevo operador
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Razón social *</label>
+            <input value={op.razon_social} onChange={(e) => set("razon_social", e.target.value)} style={inp} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>CIF / NIF</label>
+              <input value={op.cif} onChange={(e) => set("cif", e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={labelStyle}>NIMA</label>
+              <input value={op.nima} onChange={(e) => set("nima", e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Nº inscripción</label>
+              <input value={op.nro_inscripcion} onChange={(e) => set("nro_inscripcion", e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={labelStyle}>Tipo operador</label>
+              <input value={op.tipo_operador} onChange={(e) => set("tipo_operador", e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Dirección</label>
+            <input value={op.direccion} onChange={(e) => set("direccion", e.target.value)} style={inp} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 2fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>C.P.</label>
+              <input value={op.cp} onChange={(e) => set("cp", e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={labelStyle}>Municipio</label>
+              <input value={op.municipio} onChange={(e) => set("municipio", e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={labelStyle}>Provincia</label>
+              <input value={op.provincia} onChange={(e) => set("provincia", e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Teléfono</label>
+              <input value={op.telefono} onChange={(e) => set("telefono", e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input value={op.email} onChange={(e) => set("email", e.target.value)} style={inp} />
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+              background: "transparent", color: "#64748B", cursor: "pointer",
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => { if (!op.razon_social) return alert("Razón social obligatoria"); onSave(op); }}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "none",
+              background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+              cursor: "pointer", fontWeight: 700, fontSize: 13,
+            }}
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1374,6 +1760,7 @@ export default function App() {
   const [view, setView] = useState("tareas"); // tareas | ajustes
   const [settings, setSettings] = useState(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [operators, setOperators] = useState([]);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -1428,14 +1815,16 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [active, done, sett] = await Promise.all([
+      const [active, done, sett, ops] = await Promise.all([
         sbFetch("tasks?order=created_at.desc&status=neq.completado", {}, token),
         sbFetch("tasks?order=created_at.desc&status=eq.completado", {}, token),
         sbFetch("settings?id=eq.1", {}, token).catch(() => []),
+        sbFetch("operators?order=razon_social.asc", {}, token).catch(() => []),
       ]);
       setTasks(active || []);
       setCompleted(done || []);
       setSettings(sett?.[0] || null);
+      setOperators(ops || []);
     } catch (e) {
       setError("Error al cargar. Comprueba tu conexión.");
     } finally {
@@ -1472,6 +1861,55 @@ export default function App() {
     }
   };
 
+  const saveOperator = async (op) => {
+    const ALLOWED = [
+      "cif", "razon_social", "nima", "nro_inscripcion", "tipo_operador",
+      "direccion", "cp", "municipio", "provincia", "telefono", "email",
+    ];
+    const clean = {};
+    for (const k of ALLOWED) clean[k] = op[k] ?? null;
+    if (op.id) {
+      await sbFetch(
+        `operators?id=eq.${op.id}`,
+        { method: "PATCH", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token
+      );
+    } else {
+      if (user?.id) clean.user_id = user.id;
+      await sbFetch(
+        "operators",
+        { method: "POST", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token
+      );
+    }
+    const ops = await sbFetch("operators?order=razon_social.asc", {}, token).catch(() => []);
+    setOperators(ops || []);
+    return ops || [];
+  };
+
+  const nextDiNumber = async (nima) => {
+    if (!nima) return null;
+    const year = new Date().getFullYear();
+    const prefix = `${nima}/${year}/`;
+    try {
+      const rows = await sbFetch(
+        `tasks?di_number=like.${encodeURIComponent(prefix)}%25&select=di_number&order=di_number.desc&limit=1`,
+        {},
+        token
+      );
+      let n = 0;
+      if (rows && rows.length) {
+        const last = rows[0].di_number || "";
+        const m = last.match(/\/(\d+)$/);
+        if (m) n = parseInt(m[1], 10);
+      }
+      const next = String(n + 1).padStart(7, "0");
+      return `${prefix}${next}`;
+    } catch {
+      return `${prefix}0000001`;
+    }
+  };
+
   const saveTask = async (form) => {
     setSaving(true);
     setError(null);
@@ -1500,10 +1938,29 @@ export default function App() {
         "origin_name",
         "origin_address",
         "origin_cif",
+        "origin_nif",
+        "origin_nima",
+        "origin_nro_inscripcion",
+        "origin_tipo_operador",
+        "origin_cp",
+        "origin_municipio",
+        "origin_provincia",
+        "origin_telefono",
+        "origin_email",
         "destination_gestor",
         "destination_nima",
         "transport_date",
+        "di_number",
+        "start_date",
+        "end_date",
       ];
+
+      // Auto-generar Nº DI para recogidas si hay NIMA de origen y no está asignado
+      if (form.type === "recogida" && !form.di_number && (form.origin_nima || form.origin_nif)) {
+        const nima = form.origin_nima || form.origin_nif;
+        const di = await nextDiNumber(nima);
+        if (di) form.di_number = di;
+      }
 
       const clean = {};
       for (const k of CORE) {
@@ -2342,6 +2799,8 @@ export default function App() {
           onSave={saveTask}
           loading={saving}
           isAdmin={isAdmin}
+          operators={operators}
+          onSaveOperator={saveOperator}
         />
       )}
       {deleteId && (
