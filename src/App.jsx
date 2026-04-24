@@ -461,119 +461,141 @@ async function generateDIR(task, settings, truck) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
-  const M = 15;                // margen izquierdo / derecho
-  const W = 210 - 2 * M;       // ancho útil
+  const M = 15;
+  const W = 210 - 2 * M;       // ancho útil = 180
   const PAGE_H = 297;
 
   // ─── Logos ────────────────────────────────────────────────
+  // Logo oficial Gobierno de España + MITECO (embebido como PNG base64).
+  const GOV_LOGO_B64 = "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";
+  // Si tienes el logo de JC PALETS como PNG/JPG, pega aquí el data URL
+  // ("data:image/png;base64,...") y se usará en vez del dibujo.
+  const JC_LOGO_B64 = null;
+
   const drawGovLogo = (x, y) => {
-    // Barra amarilla con franja roja izquierda que imita el logo del
-    // Gobierno de España + MITECO que aparece en el modelo oficial.
-    const w = 70, h = 14;
-    doc.setFillColor(253, 204, 0);
-    doc.rect(x, y, w, h, "F");
-    doc.setFillColor(198, 11, 30);
-    doc.rect(x, y, 4, h, "F");
-    doc.setFillColor(253, 204, 0);
-    doc.rect(x + 4, y, 4, h, "F");
-    doc.setFillColor(198, 11, 30);
-    doc.rect(x + 8, y, 4, h, "F");
-    doc.setTextColor(20, 20, 20);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6);
-    doc.text("GOBIERNO", x + 14, y + 4);
-    doc.text("DE ESPAÑA", x + 14, y + 6.6);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(4.5);
-    doc.text("MINISTERIO", x + 34, y + 3.5);
-    doc.text("PARA LA TRANSICIÓN ECOLÓGICA", x + 34, y + 6);
-    doc.text("Y EL RETO DEMOGRÁFICO", x + 34, y + 8.5);
+    // 656×147 originales → 55×12 mm conserva proporción
+    doc.addImage(GOV_LOGO_B64, "PNG", x, y, 55, 12);
   };
 
   const drawJcPaletsLogo = (x, y) => {
-    // Dibujo tipográfico del logo de JC PALETS: flecha reciclaje verde,
-    // "JC PALETS" naranja grande, subtítulo y NIMA debajo.
-    const w = 60, h = 22;
+    const w = 58, h = 22;
+    // Opción A: usar imagen real si el usuario la ha subido
+    if (JC_LOGO_B64) {
+      doc.addImage(JC_LOGO_B64, "PNG", x, y, w, h);
+      return;
+    }
+    // Opción B: dibujo tipográfico como fallback
     doc.setFillColor(255, 255, 255);
     doc.rect(x, y, w, h, "F");
-    // Tres flechas en triángulo (reciclaje) — lo aproximamos con triángulo relleno
+
+    // Tres flechas de reciclaje formando un triángulo (aproximación)
     doc.setFillColor(34, 139, 58);
-    doc.triangle(x + 8, y + 2, x + 14, y + 7.5, x + 2, y + 7.5, "F");
-    doc.setFillColor(34, 139, 58);
-    doc.triangle(x + 5, y + 4, x + 11, y + 4, x + 8, y + 7.8, "F");
-    doc.setFillColor(255, 255, 255);
-    doc.triangle(x + 6.5, y + 4.8, x + 9.5, y + 4.8, x + 8, y + 6.8, "F");
-    // Texto JC PALETS
+    // Flecha superior ↘
+    doc.triangle(x + 8,  y + 1,   x + 13, y + 4.5, x + 6, y + 4.5, "F");
+    // Flecha derecha ↙
+    doc.triangle(x + 15, y + 5,   x + 13, y + 8.5, x + 10, y + 6.5, "F");
+    // Flecha izquierda ↗
+    doc.triangle(x + 3,  y + 5,   x + 5,  y + 8.5, x + 8,  y + 6.5, "F");
+    // Borde del triángulo verde central
+    doc.setDrawColor(34, 139, 58);
+    doc.setLineWidth(0.6);
+    doc.triangle(x + 8, y + 2.5, x + 12, y + 7.5, x + 4, y + 7.5);
+    doc.setLineWidth(0.1);
+
+    // Texto JC PALETS en naranja
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
+    doc.setFontSize(15);
     doc.setTextColor(232, 108, 30);
-    doc.text("JC PALETS", x + 18, y + 8);
+    doc.text("JC PALETS", x + 19, y + 8.5);
+
     // Subtítulo
     doc.setFont("helvetica", "italic");
-    doc.setFontSize(5.5);
-    doc.setTextColor(60, 60, 60);
-    doc.text("Gestor de residuos no peligrosos", x + 18, y + 12);
-    // NIMA
+    doc.setFontSize(6);
+    doc.setTextColor(80, 80, 80);
+    doc.text("Gestor de residuos no peligrosos", x + 19, y + 13);
+
+    // NIMA — DENTRO del bloque del logo (no se pisa con el título)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5);
+    doc.setFontSize(7);
     doc.setTextColor(20, 20, 20);
-    doc.text("NIMA: 3020143940", x + 18, y + 17);
+    doc.text("NIMA: 3020143940", x + 19, y + 18);
   };
 
   const drawPageHeader = () => {
-    drawGovLogo(M, M - 5);
-    drawJcPaletsLogo(210 - M - 60, M - 7);
+    drawGovLogo(M, 10);
+    drawJcPaletsLogo(210 - M - 58, 8);
   };
 
   // ─── Helpers de tabla ─────────────────────────────────────
   const GREY_HEADER = [217, 217, 217];
+  const SUB_GREY   = [240, 240, 240];
   const LINE = [0, 0, 0];
-  const TXT = [0, 0, 0];
+  const TXT  = [0, 0, 0];
 
   const sectionHeader = (y, text) => {
-    doc.setFillColor(...GREY_HEADER);
-    doc.setDrawColor(...LINE);
-    doc.rect(M, y, W, 6, "FD");
-    doc.setTextColor(...TXT);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text(text, M + 2, y + 4.2);
-    return y + 6;
+    const lines = doc.splitTextToSize(text, W - 4);
+    const h = Math.max(6, lines.length * 3.6 + 2);
+    doc.setFillColor(...GREY_HEADER);
+    doc.setDrawColor(...LINE);
+    doc.setLineWidth(0.1);
+    doc.rect(M, y, W, h, "FD");
+    doc.setTextColor(...TXT);
+    lines.forEach((ln, i) =>
+      doc.text(ln, M + 2, y + 3.8 + i * 3.6)
+    );
+    return y + h;
   };
 
   const subHeader = (y, text) => {
-    doc.setFillColor(245, 245, 245);
-    doc.setDrawColor(...LINE);
-    doc.rect(M, y, W, 5, "FD");
-    doc.setTextColor(...TXT);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.8);
-    doc.text(text, M + 2, y + 3.6);
-    return y + 5;
+    const lines = doc.splitTextToSize(text, W - 4);
+    const h = Math.max(5, lines.length * 3.2 + 1.8);
+    doc.setFillColor(...SUB_GREY);
+    doc.setDrawColor(...LINE);
+    doc.setLineWidth(0.1);
+    doc.rect(M, y, W, h, "FD");
+    doc.setTextColor(...TXT);
+    lines.forEach((ln, i) =>
+      doc.text(ln, M + 2, y + 3.4 + i * 3.2)
+    );
+    return y + h;
   };
 
   // Fila de N celdas. cells = [{label, value, w}]
   const row = (y, cells, h = 6) => {
     let x = M;
     doc.setDrawColor(...LINE);
+    doc.setLineWidth(0.1);
     doc.setTextColor(...TXT);
     cells.forEach((c) => {
-      doc.setLineWidth(0.1);
       doc.rect(x, y, c.w, h);
+      const v = c.value == null ? "" : String(c.value);
       if (c.label) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7);
         doc.text(c.label, x + 1.5, y + 3);
+        const labelW = doc.getTextWidth(c.label);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
-        const labelW = doc.getTextWidth(c.label) + 2;
-        const v = c.value == null ? "" : String(c.value);
-        doc.text(v, x + 1.5 + labelW + 1, y + 4.2, { maxWidth: c.w - labelW - 2 });
+        const vw = doc.getTextWidth(v);
+        // Si etiqueta + valor caben, van en la misma línea
+        if (labelW + vw + 4 <= c.w) {
+          doc.text(v, x + 1.5 + labelW + 2, y + 3);
+        } else {
+          // Si no, valor en segunda línea (requiere h ≥ 8)
+          const lines = doc.splitTextToSize(v, c.w - 3);
+          lines.forEach((ln, i) =>
+            doc.text(ln, x + 1.5, Math.min(y + h - 1.5, y + 6.5 + i * 3.2))
+          );
+        }
       } else {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
-        const v = c.value == null ? "" : String(c.value);
-        doc.text(v, x + 1.5, y + 4, { maxWidth: c.w - 2 });
+        const lines = doc.splitTextToSize(v, c.w - 3);
+        lines.forEach((ln, i) => doc.text(ln, x + 1.5, y + 4 + i * 3.2));
       }
       x += c.w;
     });
@@ -596,57 +618,56 @@ async function generateDIR(task, settings, truck) {
     mail: emisor.email || "recipalets@jcpalets.com",
   };
 
-  const opNif = task.origin_nif || task.origin_cif || "";
+  const opNif  = task.origin_nif || task.origin_cif || "";
   const opName = task.origin_name || task.client || "";
   const opNima = task.origin_nima || "";
   const opInsc = task.origin_nro_inscripcion || "";
   const opTipo = task.origin_tipo_operador || "";
   const opAddr = task.origin_address || task.address || "";
-  const opCp = task.origin_cp || "";
-  const opMun = task.origin_municipio || "";
+  const opCp   = task.origin_cp || "";
+  const opMun  = task.origin_municipio || "";
   const opProv = task.origin_provincia || "";
-  const opTel = task.origin_telefono || "";
+  const opTel  = task.origin_telefono || "";
   const opMail = task.origin_email || "";
 
-  const shortId = (task.id || "").toString().slice(0, 8).toUpperCase();
+  const shortId  = (task.id || "").toString().slice(0, 8).toUpperCase();
   const diNumber = task.di_number || `${recipalets.nima}/${new Date().getFullYear()}/${shortId}`;
+
+  const halfW = W / 2;          // 90
+  const qW    = W / 4;          // 45
 
   // ══════════ PÁGINA 1 ══════════
   drawPageHeader();
-  let y = M + 13;
+  let y = 34;                   // título empieza BAJO los logos y el NIMA
 
   // Título
   doc.setTextColor(...TXT);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("DOCUMENTO DE IDENTIFICACIÓN DE RESIDUOS SIN NOTIFICACIÓN PREVIA", 105, y, {
-    align: "center",
-  });
-  y += 5;
+  doc.setFontSize(12.5);
+  doc.text(
+    "DOCUMENTO DE IDENTIFICACIÓN DE RESIDUOS SIN NOTIFICACIÓN PREVIA",
+    105, y, { align: "center" }
+  );
+  y += 4.5;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.text(
-    "(Artículo 6.1 y Anexo III del R.D. 553/2020, de 2 de junio, por el que se regula el traslado de residuos en el interior del territorio del",
-    105,
-    y,
-    { align: "center" }
+    "(Artículo 6.1 y Anexo III del R.D. 553/2020, de 2 de junio, por el que se regula el traslado de residuos",
+    105, y, { align: "center" }
   );
   y += 3;
-  doc.text("Estado. B.O.E. nº 171 del 19/07/2020)", 105, y, { align: "center" });
-  y += 5;
+  doc.text(
+    "en el interior del territorio del Estado. B.O.E. nº 171 del 19/07/2020)",
+    105, y, { align: "center" }
+  );
+  y += 4.5;
 
   // Documento Nº + Fechas
-  const halfW = W / 2;
-  const qW = W / 4;
   y = row(y, [
     { label: "Documento de Identificación  nº ¹", value: diNumber, w: halfW },
-    { label: "", value: fmtDate(task.start_date || task.transport_date), w: qW },
-    { label: "", value: fmtDate(task.end_date || task.transport_date), w: qW },
-  ]);
-  y = row(y, [
-    { label: "Fecha inicio de traslado²", value: "", w: halfW },
-    { label: "", value: "", w: halfW },
-  ], 0.1);  // línea fina separadora ya la dibuja la fila anterior
+    { label: "Fecha inicio de traslado²", value: fmtDate(task.start_date || task.transport_date), w: qW },
+    { label: "Fecha fin de traslado²", value: fmtDate(task.end_date || task.transport_date), w: qW },
+  ], 8);
 
   // — OPERADOR DEL TRASLADO —
   y = sectionHeader(y, "INFORMACIÓN RELATIVA AL OPERADOR DEL TRASLADO");
@@ -657,7 +678,7 @@ async function generateDIR(task, settings, truck) {
   y = row(y, [
     { label: "NIMA ³", value: opNima, w: halfW / 1.5 },
     { label: "Nº inscripción³", value: opInsc, w: halfW / 1.5 },
-    { label: "Tipo Operador Traslado⁴", value: opTipo, w: W - 2 * (halfW / 1.5) },
+    { label: "Tipo Oper. Traslado⁴", value: opTipo, w: W - 2 * (halfW / 1.5) },
   ]);
   y = row(y, [
     { label: "Dirección", value: opAddr, w: W - qW / 2 },
@@ -673,8 +694,8 @@ async function generateDIR(task, settings, truck) {
   ]);
   // Firma operador (caja alta)
   y = row(y, [
-    { label: "", value: "Firma operador de traslado", w: W / 4 },
-    { label: "", value: "", w: (3 * W) / 4 },
+    { label: "", value: "Firma operador de traslado", w: qW },
+    { label: "", value: "", w: W - qW },
   ], 12);
 
   // — ORIGEN DEL TRASLADO —
@@ -703,9 +724,8 @@ async function generateDIR(task, settings, truck) {
   ]);
   y = subHeader(
     y,
-    "Información de la empresa autorizada para realizar operaciones de tratamiento de residuos, incluido el almacenamiento, en caso de que el origen del traslado sea una instalación de tratamiento de residuos"
+    "Información de la empresa autorizada para realizar operaciones de tratamiento de residuos, incluido el almacenamiento, en caso de que el origen del traslado sea una instalación de tratamiento de residuos:"
   );
-  // Empresa autorizada en origen (vacía)
   y = row(y, [{ label: "NIF", value: "", w: halfW }, { label: "Razón social/Nombre", value: "", w: halfW }]);
   y = row(y, [{ label: "NIMA", value: "", w: halfW }, { label: "Nº inscripción", value: "", w: halfW }]);
   y = row(y, [{ label: "Dirección", value: "", w: W - qW / 2 }, { label: "C.P.", value: "", w: qW / 2 }]);
@@ -714,7 +734,7 @@ async function generateDIR(task, settings, truck) {
 
   // — DESTINO DEL TRASLADO (RECIPALETS) —
   y = sectionHeader(y, "INFORMACIÓN RELATIVA AL DESTINO DEL TRASLADO");
-  y = subHeader(y, "Información de la instalación de destino¹⁵");
+  y = subHeader(y, "Información de la instalación de destino¹⁵:");
   y = row(y, [
     { label: "NIF", value: recipalets.nif, w: halfW },
     { label: "Razón social/Nombre", value: recipalets.razon, w: halfW },
@@ -738,7 +758,7 @@ async function generateDIR(task, settings, truck) {
   ]);
   y = subHeader(
     y,
-    "Información de la empresa autorizada para realizar operaciones de tratamiento de residuos, incluido el almacenamiento, en la instalación de destino"
+    "Información de la empresa autorizada para realizar operaciones de tratamiento de residuos, incluido el almacenamiento, en la instalación de destino:"
   );
   y = row(y, [
     { label: "NIF", value: recipalets.nif, w: halfW },
@@ -764,24 +784,21 @@ async function generateDIR(task, settings, truck) {
   // ══════════ PÁGINA 2 ══════════
   doc.addPage();
   drawPageHeader();
-  y = M + 13;
+  y = 34;
 
   // — RESIDUO QUE SE TRASLADA —
   y = sectionHeader(y, "INFORMACIÓN SOBRE EL RESIDUO QUE SE TRASLADA");
   y = row(y, [
-    { label: "Código LER/LER- extendido ⁹", value: task.ler_code || "", w: halfW },
+    { label: "Código LER/LER-extendido⁹", value: task.ler_code || "", w: halfW },
     { label: "", value: task.ler_code || "", w: halfW },
   ]);
   y = row(y, [
     { label: "Descripción del residuo:", value: task.waste_description || "", w: W },
   ]);
+  // Operación R: etiqueta larga, valor en línea separada
   y = row(y, [
     { label: "Operación de tratamiento destino (código R)¹⁰", value: "R1201", w: halfW },
-    {
-      label: "Código operación tratamiento destino desagregado (4 cifras)¹¹",
-      value: "R1201",
-      w: halfW,
-    },
+    { label: "Código tratamiento destino desagregado (4 cifras)¹¹", value: "R1201", w: halfW },
   ], 10);
   y = row(y, [
     { label: "Descripción operación tratamiento¹²", value: "Clasificación de residuos", w: W },
@@ -822,7 +839,7 @@ async function generateDIR(task, settings, truck) {
     { label: "Correo electrónico", value: recipalets.mail, w: halfW },
   ]);
 
-  // — ACEPTACIÓN DEL RESIDUO (destino rellena a mano) —
+  // — ACEPTACIÓN DEL RESIDUO —
   y = sectionHeader(y, "INFORMACIÓN SOBRE LA ACEPTACIÓN DEL RESIDUO");
   y = row(y, [
     { label: "Fecha entrega:", value: "", w: halfW },
@@ -833,6 +850,7 @@ async function generateDIR(task, settings, truck) {
   y = row(y, [{ label: "Acción en caso de rechazo", value: "", w: W }]);
   y = row(y, [{ label: "Fecha devolución/reenvío", value: "", w: W }]);
   y = row(y, [{ label: "Motivo de rechazo", value: "", w: W }]);
+
   // Firma del gestor de destino (con sello RECIPALETS)
   const firmaH = 18;
   doc.setDrawColor(...LINE);
@@ -858,7 +876,7 @@ async function generateDIR(task, settings, truck) {
   doc.text("Tlf. +34 637 54 35 18", sx, y + 17, { align: "center" });
   doc.setTextColor(...TXT);
   y += firmaH;
-  // Firma aceptación/rechazo
+
   doc.rect(M, y, qW, firmaH);
   doc.rect(M + qW, y, W - qW, firmaH);
   doc.setFont("helvetica", "normal");
@@ -879,7 +897,10 @@ async function generateDIR(task, settings, truck) {
   // Pie
   doc.setFontSize(6.5);
   doc.setTextColor(120, 120, 120);
-  doc.text("DIR generado con FleetDesk · Conserve una copia durante el transporte.", M, PAGE_H - 6);
+  doc.text(
+    "DIR generado con FleetDesk · Conserve una copia durante el transporte.",
+    M, PAGE_H - 6
+  );
 
   // Guardar
   const cliente = (task.origin_name || task.client || "cliente")
@@ -2959,11 +2980,11 @@ export default function App() {
                       </button>
                       <button
                         onClick={() =>
-                          generateDAT(task, settings, trucks.find((t) => t.id === task.truck)).catch(
-                            (err) => setError("No se pudo generar el DAT: " + err.message)
+                          generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
+                            (err) => setError("No se pudo generar el DIR: " + err.message)
                           )
                         }
-                        title="Generar DAT"
+                        title="Generar DIR"
                         style={{
                           width: 44,
                           padding: "10px",
@@ -3025,8 +3046,8 @@ export default function App() {
                     >
                       <button
                         onClick={() =>
-                          generateDAT(task, settings, trucks.find((t) => t.id === task.truck)).catch(
-                            (err) => setError("No se pudo generar el DAT: " + err.message)
+                          generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
+                            (err) => setError("No se pudo generar el DIR: " + err.message)
                           )
                         }
                         style={{
