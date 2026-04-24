@@ -758,11 +758,12 @@ function LoginScreen({ onLogin }) {
 }
 
 // ── Task Modal ────────────────────────────────────────────────
-function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], onSaveOperator, onNextDi }) {
+function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, operators = [], onSaveOperator, onNextDi }) {
   const [form, setForm] = useState(
     task || {
-      type: "entrega",
-      truck: "T-01",
+      // Los conductores sólo pueden crear recogidas en su propio camión.
+      type: isAdmin ? "entrega" : "recogida",
+      truck: isAdmin ? "T-01" : (userTruck || "T-01"),
       client: "",
       address: "",
       lat: null,
@@ -1744,6 +1745,7 @@ export default function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
+  const [truckId, setTruckId] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [completed, setCompleted] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1772,10 +1774,12 @@ export default function App() {
     const savedToken = sessionStorage.getItem("fleet_token");
     const savedUser = sessionStorage.getItem("fleet_user");
     const savedRole = sessionStorage.getItem("fleet_role");
+    const savedTruck = sessionStorage.getItem("fleet_truck");
     if (savedToken && savedUser && savedRole) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
       setRole(savedRole);
+      if (savedTruck && savedTruck !== "null") setTruckId(savedTruck);
     }
   }, []);
 
@@ -1788,12 +1792,15 @@ export default function App() {
     try {
       const profiles = await sbFetch(`profiles?id=eq.${userData.id}`, {}, accessToken);
       const userRole = profiles[0]?.role || "conductor";
+      const userTruck = profiles[0]?.truck_id || null;
       setToken(accessToken);
       setUser(userData);
       setRole(userRole);
+      setTruckId(userTruck);
       sessionStorage.setItem("fleet_token", accessToken);
       sessionStorage.setItem("fleet_user", JSON.stringify(userData));
       sessionStorage.setItem("fleet_role", userRole);
+      sessionStorage.setItem("fleet_truck", userTruck || "");
     } catch (e) {
       setError("Error al obtener perfil");
     } finally {
@@ -1805,6 +1812,7 @@ export default function App() {
     setToken(null);
     setUser(null);
     setRole(null);
+    setTruckId(null);
     setTasks([]);
     setCompleted([]);
     sessionStorage.clear();
@@ -2441,6 +2449,7 @@ export default function App() {
         <div
           style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}
         >
+          {isAdmin && (
           <select
             value={filterTruck}
             onChange={(e) => setFilterTruck(e.target.value)}
@@ -2463,6 +2472,7 @@ export default function App() {
               </option>
             ))}
           </select>
+          )}
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -2530,9 +2540,9 @@ export default function App() {
             <div style={{ fontSize: 15, fontWeight: 600 }}>
               {activeTab === "activas" ? "No hay tareas activas" : "No hay tareas completadas"}
             </div>
-            {activeTab === "activas" && isAdmin && (
+            {activeTab === "activas" && (isAdmin || truckId) && (
               <div style={{ fontSize: 13, marginTop: 6, color: "#1E2D3D" }}>
-                Pulsa + para añadir una
+                {isAdmin ? "Pulsa + para añadir una" : "Pulsa + para crear una recogida"}
               </div>
             )}
           </div>
@@ -2775,10 +2785,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* FAB solo para admin */}
-      {isAdmin && activeTab === "activas" && (
+      {/* FAB: admin siempre, conductor sólo si tiene camión asignado */}
+      {activeTab === "activas" && (isAdmin || truckId) && (
         <button
           onClick={() => setModal("new")}
+          title={isAdmin ? "Nueva tarea" : "Nueva recogida"}
           style={{
             position: "fixed",
             bottom: 28,
@@ -2809,6 +2820,7 @@ export default function App() {
           onSave={saveTask}
           loading={saving}
           isAdmin={isAdmin}
+          userTruck={truckId}
           operators={operators}
           onSaveOperator={saveOperator}
           onNextDi={nextDiNumber}
@@ -2823,4 +2835,5 @@ export default function App() {
       )}
     </div>
   );
+}
 }
