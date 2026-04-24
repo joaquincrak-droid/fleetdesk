@@ -652,7 +652,7 @@ function LoginScreen({ onLogin }) {
     setError("");
     try {
       const data = await authFetch("token?grant_type=password", { email, password });
-      onLogin(data.access_token, data.user);
+      onLogin(data.access_token, data.user, data.refresh_token);
     } catch (e) {
       setError("Email o contraseña incorrectos");
     } finally {
@@ -1770,16 +1770,40 @@ export default function App() {
     link.rel = "stylesheet";
     document.head.appendChild(link);
 
-    // Restore session
-    const savedToken = sessionStorage.getItem("fleet_token");
-    const savedUser = sessionStorage.getItem("fleet_user");
-    const savedRole = sessionStorage.getItem("fleet_role");
-    const savedTruck = sessionStorage.getItem("fleet_truck");
+    // Restore session (persistente entre cierres de navegador).
+    // Si hay refresh_token, lo canjeamos por un access_token fresco
+    // para evitar 401 cuando el anterior ha caducado (duran ~1 h).
+    const savedToken = localStorage.getItem("fleet_token");
+    const savedUser = localStorage.getItem("fleet_user");
+    const savedRole = localStorage.getItem("fleet_role");
+    const savedTruck = localStorage.getItem("fleet_truck");
+    const savedRefresh = localStorage.getItem("fleet_refresh");
     if (savedToken && savedUser && savedRole) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+      const userObj = JSON.parse(savedUser);
+      setUser(userObj);
       setRole(savedRole);
       if (savedTruck && savedTruck !== "null") setTruckId(savedTruck);
+      if (savedRefresh) {
+        // Refrescar el token antes de usarlo
+        authFetch("token?grant_type=refresh_token", { refresh_token: savedRefresh })
+          .then((data) => {
+            setToken(data.access_token);
+            localStorage.setItem("fleet_token", data.access_token);
+            if (data.refresh_token) {
+              localStorage.setItem("fleet_refresh", data.refresh_token);
+            }
+          })
+          .catch(() => {
+            // Refresh falló (token revocado, expirado, etc.) → forzar re-login
+            localStorage.clear();
+            setUser(null);
+            setRole(null);
+            setTruckId(null);
+          });
+      } else {
+        // Sesión antigua sin refresh_token: se usa lo que haya hasta que expire
+        setToken(savedToken);
+      }
     }
   }, []);
 
@@ -1787,7 +1811,7 @@ export default function App() {
     if (token && role) loadData();
   }, [token, role]);
 
-  const handleLogin = async (accessToken, userData) => {
+  const handleLogin = async (accessToken, userData, refreshToken = null) => {
     setLoading(true);
     try {
       const profiles = await sbFetch(`profiles?id=eq.${userData.id}`, {}, accessToken);
@@ -1797,10 +1821,11 @@ export default function App() {
       setUser(userData);
       setRole(userRole);
       setTruckId(userTruck);
-      sessionStorage.setItem("fleet_token", accessToken);
-      sessionStorage.setItem("fleet_user", JSON.stringify(userData));
-      sessionStorage.setItem("fleet_role", userRole);
-      sessionStorage.setItem("fleet_truck", userTruck || "");
+      localStorage.setItem("fleet_token", accessToken);
+      localStorage.setItem("fleet_user", JSON.stringify(userData));
+      localStorage.setItem("fleet_role", userRole);
+      localStorage.setItem("fleet_truck", userTruck || "");
+      if (refreshToken) localStorage.setItem("fleet_refresh", refreshToken);
     } catch (e) {
       setError("Error al obtener perfil");
     } finally {
@@ -1815,7 +1840,7 @@ export default function App() {
     setTruckId(null);
     setTasks([]);
     setCompleted([]);
-    sessionStorage.clear();
+    localStorage.clear();
   };
 
   const loadData = async () => {
