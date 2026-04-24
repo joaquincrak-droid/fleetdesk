@@ -825,18 +825,39 @@ async function generateDIR(task, settings, truck) {
   ]);
 
   // — ACEPTACIÓN DEL RESIDUO —
+  // Se prerrellena como si la mercancía hubiera sido aceptada el mismo día
+  // de la recogida (estándar RECIPALETS): fecha de entrega, fecha de
+  // aceptación = fecha de la recogida y casilla "Sí" marcada.
+  const fechaRecogida = fmtDate(task.transport_date || task.start_date || task.end_date);
+  const kgsAceptados = task.quantity || task.weight || "";
   y = sectionHeader(y, "INFORMACIÓN SOBRE LA ACEPTACIÓN DEL RESIDUO");
   y = row(y, [
-    { label: "Fecha entrega:", value: "", w: halfW },
-    { label: "Kg. netos recibidos", value: "", w: qW },
-    { label: "Aceptación", value: "Sí ☐    No ☐", w: qW },
+    { label: "Fecha entrega:", value: fechaRecogida, w: halfW },
+    { label: "Kg. netos recibidos", value: kgsAceptados, w: qW },
+    { label: "Aceptación", value: "Sí [X]   No [ ]", w: qW },
   ]);
-  y = row(y, [{ label: "Fecha aceptación/rechazo", value: "", w: W }]);
+  y = row(y, [{ label: "Fecha aceptación/rechazo", value: fechaRecogida, w: W }]);
   y = row(y, [{ label: "Acción en caso de rechazo", value: "", w: W }]);
   y = row(y, [{ label: "Fecha devolución/reenvío", value: "", w: W }]);
   y = row(y, [{ label: "Motivo de rechazo", value: "", w: W }]);
 
-  // Firma del gestor de destino (con sello RECIPALETS)
+  // Helper: dibuja el sello RECIPALETS centrado en una caja
+  const drawRecipaletsSello = (boxX, boxY, boxW, boxH) => {
+    const cx = boxX + boxW / 2;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(25, 55, 155);
+    doc.text("RECIPALETS TOTANA S.L.", cx, boxY + 5, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.text("C.I.F.: B-73384059", cx, boxY + 8, { align: "center" });
+    doc.text("Autovía del Mediterráneo Km 609", cx, boxY + 11, { align: "center" });
+    doc.text("30850 TOTANA (Murcia)", cx, boxY + 14, { align: "center" });
+    doc.text("Tlf. +34 637 54 35 18", cx, boxY + 17, { align: "center" });
+    doc.setTextColor(...TXT);
+  };
+
+  // Firma del gestor de destino: RECEPCIÓN (con sello RECIPALETS)
   const firmaH = 18;
   doc.setDrawColor(...LINE);
   doc.setLineWidth(0.1);
@@ -847,21 +868,10 @@ async function generateDIR(task, settings, truck) {
   doc.text("Firma del gestor de la", M + 1.5, y + 4);
   doc.text("instalación de destino", M + 1.5, y + 7);
   doc.text("recepción del residuo¹³", M + 1.5, y + 10);
-  // Sello RECIPALETS
-  const sx = M + qW + (W - qW) / 2;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(25, 55, 155);
-  doc.text("RECIPALETS TOTANA S.L.", sx, y + 5, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.text("C.I.F.: B-73384059", sx, y + 8, { align: "center" });
-  doc.text("Autovía del Mediterráneo Km 609", sx, y + 11, { align: "center" });
-  doc.text("30850 TOTANA (Murcia)", sx, y + 14, { align: "center" });
-  doc.text("Tlf. +34 637 54 35 18", sx, y + 17, { align: "center" });
-  doc.setTextColor(...TXT);
+  drawRecipaletsSello(M + qW, y, W - qW, firmaH);
   y += firmaH;
 
+  // Firma del gestor de destino: ACEPTACIÓN/RECHAZO (también con sello)
   doc.rect(M, y, qW, firmaH);
   doc.rect(M + qW, y, W - qW, firmaH);
   doc.setFont("helvetica", "normal");
@@ -870,6 +880,7 @@ async function generateDIR(task, settings, truck) {
   doc.text("instalación de destino", M + 1.5, y + 7);
   doc.text("aceptación/rechazo", M + 1.5, y + 10);
   doc.text("residuo¹⁴", M + 1.5, y + 13);
+  drawRecipaletsSello(M + qW, y, W - qW, firmaH);
   y += firmaH;
 
   // — RECEPCIÓN EN ORIGEN DEL RESIDUO RECHAZADO —
