@@ -517,10 +517,20 @@ async function generateDIR(task, settings, truck) {
   const LINE = [0, 0, 0];
   const TXT  = [0, 0, 0];
 
+  // Los superíndices unicode (⁴,⁶,⁸,⁹,¹⁰,¹¹,¹²,¹³,¹⁴,¹⁵) no existen
+  // en la fuente helvetica embebida de jsPDF y aparecen sustituidos
+  // por letras al azar (t,p,v,x,y…) que se pegan al valor y parecen
+  // pisarlo. Los pasamos a dígitos normales para que se lea bien.
+  const cleanSup = (s) => String(s).replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, (ch) => (
+    { "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5",
+      "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9", "⁰": "0" }[ch] || ""
+  ));
+
   const sectionHeader = (y, text) => {
+    const t = cleanSup(text);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    const lines = doc.splitTextToSize(text, W - 4);
+    const lines = doc.splitTextToSize(t, W - 4);
     const h = Math.max(6, lines.length * 3.6 + 2);
     doc.setFillColor(...GREY_HEADER);
     doc.setDrawColor(...LINE);
@@ -534,9 +544,10 @@ async function generateDIR(task, settings, truck) {
   };
 
   const subHeader = (y, text) => {
+    const t = cleanSup(text);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.8);
-    const lines = doc.splitTextToSize(text, W - 4);
+    const lines = doc.splitTextToSize(t, W - 4);
     const h = Math.max(5, lines.length * 3.2 + 1.8);
     doc.setFillColor(...SUB_GREY);
     doc.setDrawColor(...LINE);
@@ -557,30 +568,38 @@ async function generateDIR(task, settings, truck) {
     doc.setTextColor(...TXT);
     cells.forEach((c) => {
       doc.rect(x, y, c.w, h);
-      const v = c.value == null ? "" : String(c.value);
-      if (c.label) {
+      const v = c.value == null ? "" : cleanSup(c.value);
+      const label = c.label ? cleanSup(c.label) : "";
+      if (label) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7);
-        doc.text(c.label, x + 1.5, y + 3);
-        const labelW = doc.getTextWidth(c.label);
+        doc.text(label, x + 1.5, y + 3);
+        const labelW = doc.getTextWidth(label);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
         const vw = doc.getTextWidth(v);
-        // Si etiqueta + valor caben, van en la misma línea
-        if (labelW + vw + 4 <= c.w) {
-          doc.text(v, x + 1.5 + labelW + 2, y + 3);
-        } else {
-          // Si no, valor en segunda línea (requiere h ≥ 8)
-          const lines = doc.splitTextToSize(v, c.w - 3);
-          lines.forEach((ln, i) =>
-            doc.text(ln, x + 1.5, Math.min(y + h - 1.5, y + 6.5 + i * 3.2))
+        // Si etiqueta + valor caben holgadamente, van en la misma línea
+        if (labelW + vw + 6 <= c.w) {
+          doc.text(v, x + 1.5 + labelW + 3, y + 3);
+        } else if (h >= 9) {
+          // Con celda alta, valor en segunda línea (sin apilado)
+          const lines = doc.splitTextToSize(v, Math.max(c.w - 3, 10));
+          lines.slice(0, Math.floor((h - 4) / 3.2)).forEach((ln, i) =>
+            doc.text(ln, x + 1.5, y + 7 + i * 3.2)
           );
+        } else {
+          // Celda estrecha: truncamos para no pisar nada
+          doc.text(v, x + 1.5 + labelW + 3, y + 3, {
+            maxWidth: Math.max(c.w - labelW - 5, 10),
+          });
         }
       } else {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
-        const lines = doc.splitTextToSize(v, c.w - 3);
-        lines.forEach((ln, i) => doc.text(ln, x + 1.5, y + 4 + i * 3.2));
+        const lines = doc.splitTextToSize(v, Math.max(c.w - 3, 10));
+        lines.slice(0, Math.max(1, Math.floor(h / 3.2))).forEach((ln, i) =>
+          doc.text(ln, x + 1.5, y + 4 + i * 3.2)
+        );
       }
       x += c.w;
     });
