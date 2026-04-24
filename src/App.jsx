@@ -454,187 +454,445 @@ function fmtDate(s) {
   }
 }
 
-async function generateDAT(task, settings, truck) {
+// ── DIR (Documento de Identificación de Residuos) ──────────────
+// Formato oficial según RD 553/2020, Anexo III. Sin notificación previa.
+async function generateDIR(task, settings, truck) {
   await loadJsPdf();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
-  const M = 15; // margin
-  let y = M;
-  const W = 210 - 2 * M;
+  const M = 15;                // margen izquierdo / derecho
+  const W = 210 - 2 * M;       // ancho útil
+  const PAGE_H = 297;
 
-  // Cabecera
-  doc.setFillColor(79, 70, 229);
-  doc.rect(0, 0, 210, 10, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text("FLEETDESK", M, 7);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text("Gestión de rutas y entregas", 210 - M, 7, { align: "right" });
-
-  y = 20;
-  doc.setTextColor(20, 30, 50);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("Documento que acompaña al transporte", M, y);
-  y += 5;
-  doc.setFontSize(10);
-  doc.setTextColor(90, 100, 120);
-  doc.text("Residuos no peligrosos · Ley 7/2022 · RD 553/2020", M, y);
-  y += 8;
-
-  // Fecha y nº DI
-  doc.setTextColor(20, 30, 50);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  const shortId = (task.id || "").toString().slice(0, 8).toUpperCase();
-  const diNumber = task.di_number || `DAT-${shortId}`;
-  doc.setFont("helvetica", "bold");
-  doc.text(`Documento de Identificación nº: ${diNumber}`, M, y);
-  doc.setFont("helvetica", "normal");
-  doc.text(
-    `Fecha del transporte: ${fmtDate(task.transport_date || task.created_at)}`,
-    210 - M,
-    y,
-    { align: "right" }
-  );
-  y += 5;
-  if (task.start_date || task.end_date) {
-    doc.text(
-      `Inicio: ${fmtDate(task.start_date) || "—"}    Fin: ${fmtDate(task.end_date) || "—"}`,
-      M,
-      y
-    );
-    y += 5;
-  }
-  y += 3;
-
-  const box = (title, lines) => {
-    doc.setDrawColor(220, 225, 235);
-    doc.setFillColor(250, 251, 253);
-    const h = 8 + lines.length * 5 + 2;
-    doc.rect(M, y, W, h, "FD");
+  // ─── Logos ────────────────────────────────────────────────
+  const drawGovLogo = (x, y) => {
+    // Barra amarilla con franja roja izquierda que imita el logo del
+    // Gobierno de España + MITECO que aparece en el modelo oficial.
+    const w = 70, h = 14;
+    doc.setFillColor(253, 204, 0);
+    doc.rect(x, y, w, h, "F");
+    doc.setFillColor(198, 11, 30);
+    doc.rect(x, y, 4, h, "F");
+    doc.setFillColor(253, 204, 0);
+    doc.rect(x + 4, y, 4, h, "F");
+    doc.setFillColor(198, 11, 30);
+    doc.rect(x + 8, y, 4, h, "F");
+    doc.setTextColor(20, 20, 20);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(79, 70, 229);
-    doc.text(title, M + 3, y + 5.5);
+    doc.setFontSize(6);
+    doc.text("GOBIERNO", x + 14, y + 4);
+    doc.text("DE ESPAÑA", x + 14, y + 6.6);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(30, 40, 60);
-    lines.forEach((ln, i) => doc.text(ln, M + 3, y + 11 + i * 5));
-    y += h + 3;
+    doc.setFontSize(4.5);
+    doc.text("MINISTERIO", x + 34, y + 3.5);
+    doc.text("PARA LA TRANSICIÓN ECOLÓGICA", x + 34, y + 6);
+    doc.text("Y EL RETO DEMOGRÁFICO", x + 34, y + 8.5);
   };
 
-  // Emisor / Transportista (datos de la empresa)
-  // Si la tabla settings está vacía usamos los datos fijos de RECIPALETS TOTANA S.L.
+  const drawJcPaletsLogo = (x, y) => {
+    // Dibujo tipográfico del logo de JC PALETS: flecha reciclaje verde,
+    // "JC PALETS" naranja grande, subtítulo y NIMA debajo.
+    const w = 60, h = 22;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(x, y, w, h, "F");
+    // Tres flechas en triángulo (reciclaje) — lo aproximamos con triángulo relleno
+    doc.setFillColor(34, 139, 58);
+    doc.triangle(x + 8, y + 2, x + 14, y + 7.5, x + 2, y + 7.5, "F");
+    doc.setFillColor(34, 139, 58);
+    doc.triangle(x + 5, y + 4, x + 11, y + 4, x + 8, y + 7.8, "F");
+    doc.setFillColor(255, 255, 255);
+    doc.triangle(x + 6.5, y + 4.8, x + 9.5, y + 4.8, x + 8, y + 6.8, "F");
+    // Texto JC PALETS
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(232, 108, 30);
+    doc.text("JC PALETS", x + 18, y + 8);
+    // Subtítulo
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(5.5);
+    doc.setTextColor(60, 60, 60);
+    doc.text("Gestor de residuos no peligrosos", x + 18, y + 12);
+    // NIMA
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(20, 20, 20);
+    doc.text("NIMA: 3020143940", x + 18, y + 17);
+  };
+
+  const drawPageHeader = () => {
+    drawGovLogo(M, M - 5);
+    drawJcPaletsLogo(210 - M - 60, M - 7);
+  };
+
+  // ─── Helpers de tabla ─────────────────────────────────────
+  const GREY_HEADER = [217, 217, 217];
+  const LINE = [0, 0, 0];
+  const TXT = [0, 0, 0];
+
+  const sectionHeader = (y, text) => {
+    doc.setFillColor(...GREY_HEADER);
+    doc.setDrawColor(...LINE);
+    doc.rect(M, y, W, 6, "FD");
+    doc.setTextColor(...TXT);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text(text, M + 2, y + 4.2);
+    return y + 6;
+  };
+
+  const subHeader = (y, text) => {
+    doc.setFillColor(245, 245, 245);
+    doc.setDrawColor(...LINE);
+    doc.rect(M, y, W, 5, "FD");
+    doc.setTextColor(...TXT);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.8);
+    doc.text(text, M + 2, y + 3.6);
+    return y + 5;
+  };
+
+  // Fila de N celdas. cells = [{label, value, w}]
+  const row = (y, cells, h = 6) => {
+    let x = M;
+    doc.setDrawColor(...LINE);
+    doc.setTextColor(...TXT);
+    cells.forEach((c) => {
+      doc.setLineWidth(0.1);
+      doc.rect(x, y, c.w, h);
+      if (c.label) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.text(c.label, x + 1.5, y + 3);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        const labelW = doc.getTextWidth(c.label) + 2;
+        const v = c.value == null ? "" : String(c.value);
+        doc.text(v, x + 1.5 + labelW + 1, y + 4.2, { maxWidth: c.w - labelW - 2 });
+      } else {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        const v = c.value == null ? "" : String(c.value);
+        doc.text(v, x + 1.5, y + 4, { maxWidth: c.w - 2 });
+      }
+      x += c.w;
+    });
+    return y + h;
+  };
+
+  // ─── Datos pre-rellenados ──────────────────────────────────
   const emisor = settings || {};
-  box("TRANSPORTISTA / EMISOR", [
-    `Razón social: ${emisor.razon_social || "RECIPALETS TOTANA S.L."}`,
-    `CIF/NIF: ${emisor.cif || "B73384059"}`,
-    `Domicilio: ${emisor.domicilio || "Autovía del Mediterráneo KM 609"}`,
-    `Tel.: ${emisor.telefono || "637543518"}    Email: ${emisor.email || "medioambiente@jcpalets.com"}`,
-    `NIMA: ${emisor.nima || "3020143940"}`,
-    `Conductor: ${truck ? `${truck.driver} (${truck.id})` : task.truck || "—"}`,
-  ]);
+  const recipalets = {
+    nif: emisor.cif || "B73384059",
+    razon: emisor.razon_social || "RECIPALETS TOTANA S.L.",
+    nima: emisor.nima || "3020143940",
+    inscripcion: emisor.autorizacion || "AAS20250026",
+    tipoGestor: "G04",
+    direccion: emisor.domicilio || "CALLE NARANJO Nº 6",
+    cp: "30850",
+    mun: "TOTANA",
+    prov: "MURCIA",
+    tel: emisor.telefono || "637543518",
+    mail: emisor.email || "recipalets@jcpalets.com",
+  };
 
-  // Operador del traslado (productor del residuo)
-  const opNif = task.origin_nif || task.origin_cif || "—";
-  const opNima = task.origin_nima || "—";
-  const opInsc = task.origin_nro_inscripcion || "—";
-  const opTipo = task.origin_tipo_operador || "—";
-  const opAddr = task.origin_address || task.address || "—";
-  const opCp = task.origin_cp || "—";
-  const opMun = task.origin_municipio || "—";
-  const opProv = task.origin_provincia || "—";
-  const opTel = task.origin_telefono || "—";
-  const opMail = task.origin_email || "—";
-  const opName = task.origin_name || task.client || "—";
+  const opNif = task.origin_nif || task.origin_cif || "";
+  const opName = task.origin_name || task.client || "";
+  const opNima = task.origin_nima || "";
+  const opInsc = task.origin_nro_inscripcion || "";
+  const opTipo = task.origin_tipo_operador || "";
+  const opAddr = task.origin_address || task.address || "";
+  const opCp = task.origin_cp || "";
+  const opMun = task.origin_municipio || "";
+  const opProv = task.origin_provincia || "";
+  const opTel = task.origin_telefono || "";
+  const opMail = task.origin_email || "";
 
-  box("INFORMACIÓN RELATIVA AL OPERADOR DEL TRASLADO", [
-    `NIF: ${opNif}    Razón social: ${opName}`,
-    `NIMA: ${opNima}    Nº inscripción: ${opInsc}    Tipo operador: ${opTipo}`,
-    `Dirección: ${opAddr}    C.P.: ${opCp}`,
-    `Municipio: ${opMun}    Provincia: ${opProv}`,
-    `Teléfono: ${opTel}    Email: ${opMail}`,
-  ]);
+  const shortId = (task.id || "").toString().slice(0, 8).toUpperCase();
+  const diNumber = task.di_number || `${recipalets.nima}/${new Date().getFullYear()}/${shortId}`;
 
-  // Origen del traslado (mismos datos)
-  box("INFORMACIÓN RELATIVA AL ORIGEN DEL TRASLADO", [
-    `NIF: ${opNif}    Razón social: ${opName}`,
-    `NIMA: ${opNima}    Nº inscripción: ${opInsc}    Tipo centro productor: ${opTipo}`,
-    `Dirección: ${opAddr}    C.P.: ${opCp}`,
-    `Municipio: ${opMun}    Provincia: ${opProv}`,
-    `Teléfono: ${opTel}    Email: ${opMail}`,
-  ]);
+  // ══════════ PÁGINA 1 ══════════
+  drawPageHeader();
+  let y = M + 13;
 
-  // Gestor / Destino (RECIPALETS como fallback si la tarea antigua no tiene los datos)
-  box("GESTOR / DESTINO", [
-    `Nombre gestor: ${task.destination_gestor || "RECIPALETS TOTANA S.L."}`,
-    `CIF/NIF: ${task.destination_cif || "B73384059"}`,
-    `Domicilio: ${task.destination_address || "Autovía del Mediterráneo Km 609, 30850 TOTANA (Murcia)"}`,
-    `NIMA: ${task.destination_nima || "3020143940"}`,
-    `Tel.: ${task.destination_phone || "637543518"}    Email: ${task.destination_email || "medioambiente@jcpalets.com"}`,
-  ]);
-
-  // Residuo
-  box("RESIDUO", [
-    `Código LER: ${task.ler_code || "—"}`,
-    `Descripción: ${task.waste_description || "—"}`,
-    `Cantidad: ${task.quantity || task.weight || "—"}`,
-    `Tipo envase: ${task.container_type || "Palets de madera rotos"}`,
-  ]);
-
-  // Observaciones
-  box("OBSERVACIONES", [task.notes || "—"]);
-
-  // Firmas (en la de transportista estampamos el sello RECIPALETS)
-  y += 4;
-  const colW = (W - 6) / 2;
-  const firmaH = 34;
-  ["Firma productor", "Firma transportista"].forEach((label, i) => {
-    const x = M + (colW + 6) * i;
-    doc.setDrawColor(200, 205, 215);
-    doc.rect(x, y, colW, firmaH);
-    doc.setFontSize(8);
-    doc.setTextColor(100, 110, 130);
-    doc.text(label, x + 3, y + 5);
-    if (i === 1) {
-      // Sello azul estilo estampado real
-      const cx = x + colW / 2;
-      doc.setTextColor(25, 55, 155);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text("RECIPALETS TOTANA S.L.", cx, y + 13, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.text("C.I.F.: B-73384059", cx, y + 17, { align: "center" });
-      doc.text("Autovía del Mediterráneo Km 609", cx, y + 21, { align: "center" });
-      doc.text("30850 TOTANA (Murcia)", cx, y + 25, { align: "center" });
-      doc.text("Tlf. +34 637 54 35 18", cx, y + 29, { align: "center" });
-      // Reset de estilos para el resto del PDF
-      doc.setTextColor(30, 40, 60);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-    }
+  // Título
+  doc.setTextColor(...TXT);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("DOCUMENTO DE IDENTIFICACIÓN DE RESIDUOS SIN NOTIFICACIÓN PREVIA", 105, y, {
+    align: "center",
   });
-  y += firmaH + 6;
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.text(
+    "(Artículo 6.1 y Anexo III del R.D. 553/2020, de 2 de junio, por el que se regula el traslado de residuos en el interior del territorio del",
+    105,
+    y,
+    { align: "center" }
+  );
+  y += 3;
+  doc.text("Estado. B.O.E. nº 171 del 19/07/2020)", 105, y, { align: "center" });
+  y += 5;
+
+  // Documento Nº + Fechas
+  const halfW = W / 2;
+  const qW = W / 4;
+  y = row(y, [
+    { label: "Documento de Identificación  nº ¹", value: diNumber, w: halfW },
+    { label: "", value: fmtDate(task.start_date || task.transport_date), w: qW },
+    { label: "", value: fmtDate(task.end_date || task.transport_date), w: qW },
+  ]);
+  y = row(y, [
+    { label: "Fecha inicio de traslado²", value: "", w: halfW },
+    { label: "", value: "", w: halfW },
+  ], 0.1);  // línea fina separadora ya la dibuja la fila anterior
+
+  // — OPERADOR DEL TRASLADO —
+  y = sectionHeader(y, "INFORMACIÓN RELATIVA AL OPERADOR DEL TRASLADO");
+  y = row(y, [
+    { label: "NIF", value: opNif, w: halfW },
+    { label: "Razón social/Nombre", value: opName, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "NIMA ³", value: opNima, w: halfW / 1.5 },
+    { label: "Nº inscripción³", value: opInsc, w: halfW / 1.5 },
+    { label: "Tipo Operador Traslado⁴", value: opTipo, w: W - 2 * (halfW / 1.5) },
+  ]);
+  y = row(y, [
+    { label: "Dirección", value: opAddr, w: W - qW / 2 },
+    { label: "C.P.", value: opCp, w: qW / 2 },
+  ]);
+  y = row(y, [
+    { label: "Municipio", value: opMun, w: halfW },
+    { label: "Provincia", value: opProv, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Teléfono", value: opTel, w: halfW },
+    { label: "Correo electrónico", value: opMail, w: halfW },
+  ]);
+  // Firma operador (caja alta)
+  y = row(y, [
+    { label: "", value: "Firma operador de traslado", w: W / 4 },
+    { label: "", value: "", w: (3 * W) / 4 },
+  ], 12);
+
+  // — ORIGEN DEL TRASLADO —
+  y = sectionHeader(y, "INFORMACIÓN RELATIVA AL ORIGEN DEL TRASLADO");
+  y = subHeader(y, "Información del centro productor o poseedor de residuos o de la instalación origen del traslado:");
+  y = row(y, [
+    { label: "NIF ⁵", value: opNif, w: halfW },
+    { label: "Razón social/Nombre", value: opName, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "NIMA ³", value: opNima, w: halfW / 1.5 },
+    { label: "Nº inscripción ³", value: opInsc, w: halfW / 1.5 },
+    { label: "Tipo centro Productor⁶", value: opTipo, w: W - 2 * (halfW / 1.5) },
+  ]);
+  y = row(y, [
+    { label: "Dirección⁷", value: opAddr, w: W - qW / 2 },
+    { label: "C.P.", value: opCp, w: qW / 2 },
+  ]);
+  y = row(y, [
+    { label: "Municipio", value: opMun, w: halfW },
+    { label: "Provincia", value: opProv, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Teléfono", value: opTel, w: halfW },
+    { label: "Correo electrónico", value: opMail, w: halfW },
+  ]);
+  y = subHeader(
+    y,
+    "Información de la empresa autorizada para realizar operaciones de tratamiento de residuos, incluido el almacenamiento, en caso de que el origen del traslado sea una instalación de tratamiento de residuos"
+  );
+  // Empresa autorizada en origen (vacía)
+  y = row(y, [{ label: "NIF", value: "", w: halfW }, { label: "Razón social/Nombre", value: "", w: halfW }]);
+  y = row(y, [{ label: "NIMA", value: "", w: halfW }, { label: "Nº inscripción", value: "", w: halfW }]);
+  y = row(y, [{ label: "Dirección", value: "", w: W - qW / 2 }, { label: "C.P.", value: "", w: qW / 2 }]);
+  y = row(y, [{ label: "Municipio", value: "", w: halfW }, { label: "Provincia", value: "", w: halfW }]);
+  y = row(y, [{ label: "Teléfono", value: "", w: halfW }, { label: "Correo electrónico", value: "", w: halfW }]);
+
+  // — DESTINO DEL TRASLADO (RECIPALETS) —
+  y = sectionHeader(y, "INFORMACIÓN RELATIVA AL DESTINO DEL TRASLADO");
+  y = subHeader(y, "Información de la instalación de destino¹⁵");
+  y = row(y, [
+    { label: "NIF", value: recipalets.nif, w: halfW },
+    { label: "Razón social/Nombre", value: recipalets.razon, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "NIMA", value: recipalets.nima, w: halfW / 1.5 },
+    { label: "Nº inscripción", value: recipalets.inscripcion, w: halfW / 1.5 },
+    { label: "Tipo centro gestor⁸", value: recipalets.tipoGestor, w: W - 2 * (halfW / 1.5) },
+  ]);
+  y = row(y, [
+    { label: "Dirección", value: recipalets.direccion, w: W - qW / 2 },
+    { label: "C.P.", value: recipalets.cp, w: qW / 2 },
+  ]);
+  y = row(y, [
+    { label: "Municipio", value: recipalets.mun, w: halfW },
+    { label: "Provincia", value: recipalets.prov, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Teléfono", value: recipalets.tel, w: halfW },
+    { label: "Correo electrónico", value: recipalets.mail, w: halfW },
+  ]);
+  y = subHeader(
+    y,
+    "Información de la empresa autorizada para realizar operaciones de tratamiento de residuos, incluido el almacenamiento, en la instalación de destino"
+  );
+  y = row(y, [
+    { label: "NIF", value: recipalets.nif, w: halfW },
+    { label: "Razón social/Nombre", value: recipalets.razon, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "NIMA", value: recipalets.nima, w: halfW },
+    { label: "Nº inscripción", value: recipalets.inscripcion, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Dirección", value: recipalets.direccion, w: W - qW / 2 },
+    { label: "C.P.", value: recipalets.cp, w: qW / 2 },
+  ]);
+  y = row(y, [
+    { label: "Municipio", value: recipalets.mun, w: halfW },
+    { label: "Provincia", value: recipalets.prov, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Teléfono", value: recipalets.tel, w: halfW },
+    { label: "Correo electrónico", value: recipalets.mail, w: halfW },
+  ]);
+
+  // ══════════ PÁGINA 2 ══════════
+  doc.addPage();
+  drawPageHeader();
+  y = M + 13;
+
+  // — RESIDUO QUE SE TRASLADA —
+  y = sectionHeader(y, "INFORMACIÓN SOBRE EL RESIDUO QUE SE TRASLADA");
+  y = row(y, [
+    { label: "Código LER/LER- extendido ⁹", value: task.ler_code || "", w: halfW },
+    { label: "", value: task.ler_code || "", w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Descripción del residuo:", value: task.waste_description || "", w: W },
+  ]);
+  y = row(y, [
+    { label: "Operación de tratamiento destino (código R)¹⁰", value: "R1201", w: halfW },
+    {
+      label: "Código operación tratamiento destino desagregado (4 cifras)¹¹",
+      value: "R1201",
+      w: halfW,
+    },
+  ], 10);
+  y = row(y, [
+    { label: "Descripción operación tratamiento¹²", value: "Clasificación de residuos", w: W },
+  ]);
+  y = row(y, [{ label: "Cantidad (kg netos)", value: task.quantity || task.weight || "", w: W }]);
+
+  // — RESPONSABILIDAD AMPLIADA —
+  y = sectionHeader(
+    y,
+    "INFORMACIÓN DEL SISTEMA DE RESPONSABILIDAD AMPLIADA DEL PRODUCTOR QUE, EN SU CASO, DECIDE LA INSTALACIÓN"
+  );
+  y = row(y, [{ label: "NIF", value: "", w: halfW }, { label: "Razón social/Nombre", value: "", w: halfW }]);
+  y = row(y, [{ label: "NIMA", value: "", w: halfW }, { label: "Nº inscripción", value: "", w: halfW }]);
+  y = row(y, [{ label: "Dirección", value: "", w: W - qW / 2 }, { label: "C.P.", value: "", w: qW / 2 }]);
+  y = row(y, [{ label: "Municipio", value: "", w: halfW }, { label: "Provincia", value: "", w: halfW }]);
+  y = row(y, [{ label: "Teléfono", value: "", w: halfW }, { label: "Correo electrónico", value: "", w: halfW }]);
+
+  // — TRANSPORTISTA (RECIPALETS) —
+  y = sectionHeader(y, "INFORMACIÓN RELATIVA AL TRANSPORTISTA");
+  y = row(y, [
+    { label: "N.I.F.:", value: recipalets.nif, w: halfW },
+    { label: "Razón social/Nombre y apellidos", value: recipalets.razon, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "NIMA:", value: recipalets.nima, w: halfW },
+    { label: "Nº inscripción", value: recipalets.inscripcion, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Dirección", value: recipalets.direccion, w: W - qW / 2 },
+    { label: "C.P.", value: recipalets.cp, w: qW / 2 },
+  ]);
+  y = row(y, [
+    { label: "Municipio", value: recipalets.mun, w: halfW },
+    { label: "Provincia", value: recipalets.prov, w: halfW },
+  ]);
+  y = row(y, [
+    { label: "Teléfono", value: recipalets.tel, w: halfW },
+    { label: "Correo electrónico", value: recipalets.mail, w: halfW },
+  ]);
+
+  // — ACEPTACIÓN DEL RESIDUO (destino rellena a mano) —
+  y = sectionHeader(y, "INFORMACIÓN SOBRE LA ACEPTACIÓN DEL RESIDUO");
+  y = row(y, [
+    { label: "Fecha entrega:", value: "", w: halfW },
+    { label: "Kg. netos recibidos", value: "", w: qW },
+    { label: "Aceptación", value: "Sí ☐    No ☐", w: qW },
+  ]);
+  y = row(y, [{ label: "Fecha aceptación/rechazo", value: "", w: W }]);
+  y = row(y, [{ label: "Acción en caso de rechazo", value: "", w: W }]);
+  y = row(y, [{ label: "Fecha devolución/reenvío", value: "", w: W }]);
+  y = row(y, [{ label: "Motivo de rechazo", value: "", w: W }]);
+  // Firma del gestor de destino (con sello RECIPALETS)
+  const firmaH = 18;
+  doc.setDrawColor(...LINE);
+  doc.setLineWidth(0.1);
+  doc.rect(M, y, qW, firmaH);
+  doc.rect(M + qW, y, W - qW, firmaH);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.text("Firma del gestor de la", M + 1.5, y + 4);
+  doc.text("instalación de destino", M + 1.5, y + 7);
+  doc.text("recepción del residuo¹³", M + 1.5, y + 10);
+  // Sello RECIPALETS
+  const sx = M + qW + (W - qW) / 2;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(25, 55, 155);
+  doc.text("RECIPALETS TOTANA S.L.", sx, y + 5, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.text("C.I.F.: B-73384059", sx, y + 8, { align: "center" });
+  doc.text("Autovía del Mediterráneo Km 609", sx, y + 11, { align: "center" });
+  doc.text("30850 TOTANA (Murcia)", sx, y + 14, { align: "center" });
+  doc.text("Tlf. +34 637 54 35 18", sx, y + 17, { align: "center" });
+  doc.setTextColor(...TXT);
+  y += firmaH;
+  // Firma aceptación/rechazo
+  doc.rect(M, y, qW, firmaH);
+  doc.rect(M + qW, y, W - qW, firmaH);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.text("Firma del gestor de la", M + 1.5, y + 4);
+  doc.text("instalación de destino", M + 1.5, y + 7);
+  doc.text("aceptación/rechazo", M + 1.5, y + 10);
+  doc.text("residuo¹⁴", M + 1.5, y + 13);
+  y += firmaH;
+
+  // — RECEPCIÓN EN ORIGEN DEL RESIDUO RECHAZADO —
+  y = sectionHeader(y, "INFORMACIÓN SOBRE LA RECEPCIÓN EN ORIGEN DEL RESIDUO RECHAZADO Y DEVUELTO");
+  y = row(y, [
+    { label: "Fecha entrega:", value: "", w: halfW },
+    { label: "Kg. netos recibidos", value: "", w: halfW },
+  ]);
 
   // Pie
-  doc.setFontSize(7);
-  doc.setTextColor(120, 130, 150);
-  doc.text(
-    "Documento generado con FleetDesk. Conserve una copia mientras dure la operación de transporte.",
-    M,
-    287
-  );
+  doc.setFontSize(6.5);
+  doc.setTextColor(120, 120, 120);
+  doc.text("DIR generado con FleetDesk · Conserve una copia durante el transporte.", M, PAGE_H - 6);
 
-  const fname = `DAT_${(emisor.razon_social || "fleetdesk")
+  // Guardar
+  const cliente = (task.origin_name || task.client || "cliente")
+    .toString()
     .replace(/[^a-z0-9]+/gi, "_")
-    .toLowerCase()}_${shortId}.pdf`;
+    .toLowerCase()
+    .slice(0, 24);
+  const fname = `DIR_${diNumber.replace(/\//g, "-")}_${cliente}.pdf`;
   doc.save(fname);
 }
+
+// Alias por compatibilidad con llamadas antiguas
+const generateDAT = generateDIR;
 
 // ── Login Screen ──────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
@@ -2782,7 +3040,7 @@ export default function App() {
                           fontFamily: "inherit",
                         }}
                       >
-                        📄 DAT
+                        📄 DIR
                       </button>
                       {isAdmin && (
                         <button
