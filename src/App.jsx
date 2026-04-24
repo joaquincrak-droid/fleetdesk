@@ -456,7 +456,7 @@ function fmtDate(s) {
 
 // ── DIR (Documento de Identificación de Residuos) ──────────────
 // Formato oficial según RD 553/2020, Anexo III. Sin notificación previa.
-async function generateDIR(task, settings, truck) {
+async function generateDIR(task, settings, truck, opts = {}) {
   await loadJsPdf();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -917,18 +917,71 @@ async function generateDIR(task, settings, truck) {
     M, PAGE_H - 6
   );
 
-  // Guardar
+  // Guardar o devolver como base64
   const cliente = (task.origin_name || task.client || "cliente")
     .toString()
     .replace(/[^a-z0-9]+/gi, "_")
     .toLowerCase()
     .slice(0, 24);
   const fname = `DIR_${diNumber.replace(/\//g, "-")}_${cliente}.pdf`;
+  if (opts && opts.mode === "base64") {
+    const datauri = doc.output("datauristring");
+    return { datauri, filename: fname, diNumber };
+  }
   doc.save(fname);
 }
 
 // Alias por compatibilidad con llamadas antiguas
 const generateDAT = generateDIR;
+
+// ── Envío por correo del DIR ──────────────────────────────────
+// El PDF se genera en el navegador y se manda en base64 a una
+// Edge Function de Supabase ('send-dir-email') que lo reenvía al
+// correo del cliente (con copia a RECIPALETS) a través de Resend.
+async function sendDirEmail(task, settings, truck, accessToken) {
+  const dest = (task.origin_email || "").trim();
+  if (!dest) {
+    throw new Error("El operador no tiene correo electrónico. Edita la tarea y añade uno.");
+  }
+  const { datauri, filename, diNumber } = await generateDIR(task, settings, truck, {
+    mode: "base64",
+  });
+  const pdfBase64 = datauri.split(",")[1];
+  const fecha = fmtDate(task.transport_date || task.start_date || task.end_date);
+
+  const subject = `DIR ${diNumber} · RECIPALETS TOTANA S.L.`;
+  const body =
+    `Buenos días,\n\n` +
+    `Adjuntamos el Documento de Identificación de Residuos (DIR) nº ${diNumber} ` +
+    `correspondiente al traslado del día ${fecha}.\n\n` +
+    `Rogamos conserve una copia durante el transporte.\n\n` +
+    `Un saludo,\n` +
+    `RECIPALETS TOTANA S.L.\n` +
+    `Autovía del Mediterráneo Km 609 · 30850 TOTANA (Murcia)\n` +
+    `Tlf. +34 637 54 35 18 · recipalets@jcpalets.com`;
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/send-dir-email`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${accessToken || SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: dest,
+      cc: "recipalets@jcpalets.com",
+      subject,
+      body,
+      pdfBase64,
+      filename,
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Error enviando email: ${txt}`);
+  }
+  return { sentTo: dest, filename };
+}
 
 // ── Login Screen ──────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
@@ -3015,6 +3068,49 @@ export default function App() {
                         📄
                       </button>
                       <button
+                        onClick={async () => {
+                          if (!task.origin_email) {
+                            setError(
+                              "El cliente no tiene correo electrónico. Edita la tarea y añade uno."
+                            );
+                            return;
+                          }
+                          if (!confirm(`Enviar DIR a ${task.origin_email}?`)) return;
+                          try {
+                            const r = await sendDirEmail(
+                              task,
+                              settings,
+                              trucks.find((t) => t.id === task.truck),
+                              token
+                            );
+                            setError("");
+                            alert(`DIR enviado a ${r.sentTo}`);
+                          } catch (err) {
+                            setError("No se pudo enviar: " + err.message);
+                          }
+                        }}
+                        title={
+                          task.origin_email
+                            ? `Enviar DIR a ${task.origin_email}`
+                            : "Falta email del cliente"
+                        }
+                        disabled={!task.origin_email}
+                        style={{
+                          width: 44,
+                          padding: "10px",
+                          borderRadius: 10,
+                          border: "1px solid #1E2D3D",
+                          background: "transparent",
+                          color: task.origin_email ? "#34D399" : "#475569",
+                          cursor: task.origin_email ? "pointer" : "not-allowed",
+                          fontSize: 14,
+                          fontFamily: "inherit",
+                          opacity: task.origin_email ? 1 : 0.5,
+                        }}
+                      >
+                        ✉
+                      </button>
+                      <button
                         onClick={() => setModal(task)}
                         style={{
                           width: 40,
@@ -3077,6 +3173,49 @@ export default function App() {
                         }}
                       >
                         📄 DIR
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!task.origin_email) {
+                            setError(
+                              "El cliente no tiene correo electrónico. Edita la tarea y añade uno."
+                            );
+                            return;
+                          }
+                          if (!confirm(`Enviar DIR a ${task.origin_email} (con copia a RECIPALETS)?`))
+                            return;
+                          try {
+                            const r = await sendDirEmail(
+                              task,
+                              settings,
+                              trucks.find((t) => t.id === task.truck),
+                              token
+                            );
+                            setError("");
+                            alert(`DIR enviado a ${r.sentTo}`);
+                          } catch (err) {
+                            setError("No se pudo enviar: " + err.message);
+                          }
+                        }}
+                        title={
+                          task.origin_email
+                            ? `Enviar por email a ${task.origin_email}`
+                            : "Falta email del cliente"
+                        }
+                        disabled={!task.origin_email}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: 10,
+                          border: "1px solid #1E2D3D",
+                          background: "transparent",
+                          color: task.origin_email ? "#34D399" : "#475569",
+                          cursor: task.origin_email ? "pointer" : "not-allowed",
+                          fontSize: 12,
+                          fontFamily: "inherit",
+                          opacity: task.origin_email ? 1 : 0.5,
+                        }}
+                      >
+                        ✉ Email
                       </button>
                       {isAdmin && (
                         <button
