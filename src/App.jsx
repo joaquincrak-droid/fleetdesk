@@ -797,7 +797,6 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], on
     }
   );
   const [showMap, setShowMap] = useState(false);
-  const [showDat, setShowDat] = useState(false);
   const [showOperator, setShowOperator] = useState(false);
   const [operatorQuery, setOperatorQuery] = useState(form.origin_name || "");
   const [showSuggest, setShowSuggest] = useState(false);
@@ -937,6 +936,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], on
                 </div>
               </div>
             )}
+            {form.type !== "recogida" && (<>
             <div>
               <label style={labelStyle}>Cliente</label>
               <input
@@ -1025,31 +1025,10 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, operators = [], on
                 placeholder="Instrucciones especiales..."
               />
             </div>
+            </>)}
 
-            {/* Datos DAT (Documento que Acompaña al Transporte) */}
-            <button
-              type="button"
-              onClick={() => setShowDat((s) => !s)}
-              style={{
-                marginTop: 6,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px dashed #1E2D3D",
-                background: showDat ? "rgba(79,70,229,0.10)" : "transparent",
-                color: "#94A3B8",
-                cursor: "pointer",
-                fontWeight: 600,
-                fontSize: 13,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                fontFamily: "inherit",
-              }}
-            >
-              <span>📄 Datos de residuo / DAT</span>
-              <span>{showDat ? "▲" : "▼"}</span>
-            </button>
-            {showDat && (
+            {/* Datos DAT (Documento que Acompaña al Transporte) — solo en RECOGIDA */}
+            {form.type === "recogida" && (
               <div style={{ display: "grid", gap: 10, padding: "4px 2px 2px" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
