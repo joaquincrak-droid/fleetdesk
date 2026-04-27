@@ -960,7 +960,7 @@ async function sendDirEmail(task, settings, truck, accessToken) {
     `Autovía del Mediterráneo Km 609 · 30850 TOTANA (Murcia)\n` +
     `Tlf. +34 637 54 35 18 · recipalets@jcpalets.com`;
 
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/send-dir-email`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_KEY,
