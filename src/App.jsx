@@ -1784,21 +1784,39 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
   );
 }
 
-// ── Operator Modal (alta rápida) ─────────────────────────────
-function OperatorModal({ onClose, onSave, initialName }) {
-  const [op, setOp] = useState({
-    razon_social: initialName || "",
-    cif: "",
-    nima: "",
-    nro_inscripcion: "",
-    tipo_operador: "",
-    direccion: "",
-    cp: "",
-    municipio: "",
-    provincia: "",
-    telefono: "",
-    email: "",
-  });
+// ── Operator Modal (alta + edición) ──────────────────────────
+function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null }) {
+  const isEdit = !!(existing && existing.id);
+  const [op, setOp] = useState(
+    existing
+      ? {
+          id: existing.id,
+          razon_social: existing.razon_social || "",
+          cif: existing.cif || "",
+          nima: existing.nima || "",
+          nro_inscripcion: existing.nro_inscripcion || "",
+          tipo_operador: existing.tipo_operador || "",
+          direccion: existing.direccion || "",
+          cp: existing.cp || "",
+          municipio: existing.municipio || "",
+          provincia: existing.provincia || "",
+          telefono: existing.telefono || "",
+          email: existing.email || "",
+        }
+      : {
+          razon_social: initialName || "",
+          cif: "",
+          nima: "",
+          nro_inscripcion: "",
+          tipo_operador: "",
+          direccion: "",
+          cp: "",
+          municipio: "",
+          provincia: "",
+          telefono: "",
+          email: "",
+        }
+  );
   const set = (k, v) => setOp((o) => ({ ...o, [k]: v }));
   const inp = {
     width: "100%",
@@ -1830,7 +1848,7 @@ function OperatorModal({ onClose, onSave, initialName }) {
         }}
       >
         <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", marginBottom: 14 }}>
-          Nuevo operador
+          {isEdit ? "Editar cliente" : "Nuevo cliente"}
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           <div>
@@ -1886,26 +1904,198 @@ function OperatorModal({ onClose, onSave, initialName }) {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            {isEdit && onDelete && (
+              <button
+                onClick={async () => {
+                  if (!confirm(`¿Eliminar al cliente "${op.razon_social}"? Esta acción no se puede deshacer.`)) return;
+                  await onDelete(op);
+                  onClose();
+                }}
+                style={{
+                  padding: "10px 16px", borderRadius: 10, border: "1px solid #7F1D1D",
+                  background: "transparent", color: "#F87171", cursor: "pointer",
+                  fontWeight: 600, fontSize: 13,
+                }}
+              >
+                🗑 Eliminar
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+                background: "transparent", color: "#64748B", cursor: "pointer",
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => { if (!op.razon_social) return alert("Razón social obligatoria"); onSave(op); }}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+                cursor: "pointer", fontWeight: 700, fontSize: 13,
+              }}
+            >
+              {isEdit ? "Guardar cambios" : "Guardar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Operators List Modal (gestión de clientes) ───────────────
+function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null); // null = lista, {} = nuevo, {...id} = editar
+  const [saving, setSaving] = useState(false);
+
+  const norm = (s) =>
+    (s || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase();
+  const q = norm(query.trim());
+  const filtered = (operators || [])
+    .filter((o) => {
+      if (!q) return true;
+      return [o.razon_social, o.cif, o.nima, o.municipio, o.email]
+        .filter(Boolean)
+        .some((s) => norm(s).includes(q));
+    })
+    .sort((a, b) => (a.razon_social || "").localeCompare(b.razon_social || ""));
+
+  if (editing !== null) {
+    return (
+      <OperatorModal
+        existing={editing.id ? editing : null}
+        initialName={editing.razon_social || ""}
+        onClose={() => setEditing(null)}
+        onSave={async (op) => {
+          if (saving) return;
+          setSaving(true);
+          try {
+            await onSave(op);
+            setEditing(null);
+          } catch (e) {
+            alert("No se pudo guardar: " + e.message);
+          } finally {
+            setSaving(false);
+          }
+        }}
+        onDelete={async (op) => {
+          try {
+            await onDelete(op.id);
+          } catch (e) {
+            alert("No se pudo eliminar: " + e.message);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)", zIndex: 200, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 620, maxHeight: "90vh",
+          display: "flex", flexDirection: "column", gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", flex: 1 }}>
+            Clientes ({operators?.length || 0})
+          </div>
           <button
-            onClick={onClose}
+            onClick={() => setEditing({})}
             style={{
-              padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
-              background: "transparent", color: "#64748B", cursor: "pointer",
-              fontWeight: 600, fontSize: 13,
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => { if (!op.razon_social) return alert("Razón social obligatoria"); onSave(op); }}
-            style={{
-              padding: "10px 16px", borderRadius: 10, border: "none",
+              padding: "8px 14px", borderRadius: 10, border: "none",
               background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
               cursor: "pointer", fontWeight: 700, fontSize: 13,
             }}
           >
-            Guardar
+            + Nuevo
+          </button>
+        </div>
+        <input
+          type="text"
+          placeholder="🔎 Buscar por nombre, CIF, NIMA, municipio…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{
+            width: "100%", padding: "10px 12px", borderRadius: 10,
+            border: "1px solid #1E2D3D", background: "#0F1E33", color: "#E2E8F0",
+            fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+          }}
+        />
+        <div
+          style={{
+            flex: 1, overflowY: "auto", border: "1px solid #1E2D3D", borderRadius: 10,
+            background: "#0D1B2A",
+          }}
+        >
+          {filtered.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              {operators?.length
+                ? "Ningún cliente coincide con la búsqueda."
+                : 'Aún no hay clientes. Pulsa "+ Nuevo" para añadir el primero.'}
+            </div>
+          ) : (
+            filtered.map((op, i) => (
+              <div
+                key={op.id || i}
+                onClick={() => setEditing(op)}
+                style={{
+                  padding: "12px 14px",
+                  borderBottom: i < filtered.length - 1 ? "1px solid #1E2D3D" : "none",
+                  cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#13243A")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 14 }}>
+                    {op.razon_social || "(sin nombre)"}
+                  </div>
+                  <div style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                    {[op.cif, op.nima ? `NIMA ${op.nima}` : null, op.municipio, op.email]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </div>
+                <div style={{ color: "#64748B", fontSize: 16 }}>›</div>
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+              background: "transparent", color: "#94A3B8", cursor: "pointer",
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cerrar
           </button>
         </div>
       </div>
@@ -2181,6 +2371,7 @@ export default function App() {
   const [settings, setSettings] = useState(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [operators, setOperators] = useState([]);
+  const [showOperators, setShowOperators] = useState(false);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -2336,6 +2527,17 @@ export default function App() {
     const ops = await sbFetch("operators?order=razon_social.asc", {}, token).catch(() => []);
     setOperators(ops || []);
     return ops || [];
+  };
+
+  const deleteOperator = async (id) => {
+    if (!id) return;
+    await sbFetch(
+      `operators?id=eq.${id}`,
+      { method: "DELETE", headers: { Prefer: "return=minimal" } },
+      token
+    );
+    const ops = await sbFetch("operators?order=razon_social.asc", {}, token).catch(() => []);
+    setOperators(ops || []);
   };
 
   const nextDiNumber = async (nima) => {
@@ -2699,6 +2901,25 @@ export default function App() {
             >
               ↻
             </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowOperators(true)}
+                title="Clientes"
+                style={{
+                  background: "#1E2D3D",
+                  border: "none",
+                  color: "#94A3B8",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                }}
+              >
+                🏢
+              </button>
+            )}
             <button
               onClick={() => setView("ajustes")}
               title="Ajustes"
@@ -3361,6 +3582,14 @@ export default function App() {
           onConfirm={handleDelete}
           onCancel={() => setDeleteId(null)}
           loading={saving}
+        />
+      )}
+      {showOperators && (
+        <OperatorsListModal
+          operators={operators}
+          onClose={() => setShowOperators(false)}
+          onSave={saveOperator}
+          onDelete={deleteOperator}
         />
       )}
     </div>
