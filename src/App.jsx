@@ -1440,6 +1440,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
     task || {
       // Los conductores sólo pueden crear recogidas en su propio camión.
       type: isAdmin ? "entrega" : "recogida",
+      subtype: isAdmin ? null : "residuos",
       truck: isAdmin ? "T-01" : (userTruck || "T-01"),
       client: "",
       address: "",
@@ -1448,6 +1449,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
       time: "",
       status: "pendiente",
       weight: "",
+      order_number: "",
       notes: "",
       // DAT
       ler_code: "",
@@ -1678,6 +1680,26 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                 />
               </div>
             </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={labelStyle}>Cantidad</label>
+                <input
+                  value={form.quantity || ""}
+                  onChange={(e) => set("quantity", e.target.value)}
+                  style={inp}
+                  placeholder="ej. 24 palets"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Número de pedido</label>
+                <input
+                  value={form.order_number || ""}
+                  onChange={(e) => set("order_number", e.target.value)}
+                  style={inp}
+                  placeholder="ej. PED-2026-0123"
+                />
+              </div>
+            </div>
             {isAdmin && (
               <div>
                 <label style={labelStyle}>Estado</label>
@@ -1743,6 +1765,122 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     </div>
                   )}
                 </div>
+
+                {/* Tipo de recogida: palets vs residuos */}
+                <div>
+                  <label style={labelStyle}>Tipo de recogida</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {[
+                      { v: "palets",   label: "📦 Palets" },
+                      { v: "residuos", label: "♻ Residuos (con DIR)" },
+                    ].map((opt) => {
+                      const selected = (form.subtype || "residuos") === opt.v;
+                      return (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => set("subtype", opt.v)}
+                          style={{
+                            padding: "11px 12px",
+                            borderRadius: 10,
+                            border: selected ? "2px solid #4F46E5" : "1px solid #1E2D3D",
+                            background: selected ? "rgba(79,70,229,0.15)" : "#0D1B2A",
+                            color: selected ? "#E2E8F0" : "#94A3B8",
+                            cursor: "pointer",
+                            fontWeight: selected ? 700 : 500,
+                            fontSize: 13,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* RECOGIDA DE PALETS — sin DIR, solo cantidad + hora + notas */}
+                {form.subtype === "palets" && (
+                  <>
+                    <div style={{ position: "relative" }}>
+                      <label style={labelStyle}>Cliente</label>
+                      <input
+                        value={operatorQuery}
+                        onChange={(e) => {
+                          setOperatorQuery(e.target.value);
+                          set("origin_name", e.target.value);
+                          set("client", e.target.value);
+                          setShowSuggest(true);
+                        }}
+                        onFocus={() => setShowSuggest(true)}
+                        onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+                        style={inp}
+                        placeholder="Nombre del cliente o empresa"
+                        autoComplete="off"
+                      />
+                      {showSuggest && suggestions.length > 0 && (
+                        <div
+                          style={{
+                            position: "absolute", top: "100%", left: 0, right: 0,
+                            background: "#0F1E33", border: "1px solid #1E2D3D",
+                            borderRadius: 10, marginTop: 4, maxHeight: 200,
+                            overflowY: "auto", zIndex: 10,
+                          }}
+                        >
+                          {suggestions.map((op) => (
+                            <div
+                              key={op.id}
+                              onMouseDown={(e) => { e.preventDefault(); applyOperator(op); }}
+                              style={{
+                                padding: "10px 12px", cursor: "pointer",
+                                borderBottom: "1px solid #1E2D3D",
+                                color: "#E2E8F0", fontSize: 13,
+                              }}
+                            >
+                              <div style={{ fontWeight: 700 }}>{op.razon_social}</div>
+                              <div style={{ fontSize: 11, color: "#64748B" }}>
+                                {[op.cif, op.municipio].filter(Boolean).join(" · ")}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label style={labelStyle}>Cantidad de palets</label>
+                        <input
+                          type="number"
+                          value={form.quantity || ""}
+                          onChange={(e) => set("quantity", e.target.value)}
+                          style={inp}
+                          placeholder="ej. 50"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Hora</label>
+                        <input
+                          type="time"
+                          value={form.time || ""}
+                          onChange={(e) => set("time", e.target.value)}
+                          style={inp}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Notas</label>
+                      <input
+                        value={form.notes || ""}
+                        onChange={(e) => set("notes", e.target.value)}
+                        style={inp}
+                        placeholder="Tipo de palet, instrucciones especiales…"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* RECOGIDA DE RESIDUOS — formulario completo del DIR */}
+                {form.subtype !== "palets" && (<>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
                     <label style={labelStyle}>Código LER</label>
@@ -2008,6 +2146,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     />
                   </div>
                 </div>
+                </>)}
               </div>
             )}
           </div>
@@ -2900,6 +3039,7 @@ export default function App() {
       // (updated_at, user_id, created_at, etc.) viajen en PATCH/POST.
       const CORE = [
         "type",
+        "subtype",
         "truck",
         "client",
         "address",
@@ -2908,6 +3048,8 @@ export default function App() {
         "time",
         "status",
         "weight",
+        "quantity",
+        "order_number",
         "notes",
       ];
       // Campos DAT: solo se mandan si tienen valor, para no romper
@@ -2940,7 +3082,8 @@ export default function App() {
       // Auto-generar Nº DI para recogidas con formato NIMA/AAAA/NNNNNNN.
       // También sobrescribe DIs antiguos tipo "DAT-XXXXXXXX" o cualquier
       // valor que no siga el formato pedido, siempre que haya NIMA/NIF.
-      if (form.type === "recogida" && (form.origin_nima || form.origin_nif)) {
+      // Sólo aplica a recogidas de RESIDUOS — las de palets no llevan DIR.
+      if (form.type === "recogida" && form.subtype !== "palets" && (form.origin_nima || form.origin_nif)) {
         const nima = form.origin_nima || form.origin_nif;
         const year = new Date().getFullYear();
         const expectedPrefix = `${nima}/${year}/`;
@@ -3665,6 +3808,7 @@ export default function App() {
                       >
                         ⟳ Estado
                       </button>
+                      {task.subtype !== "palets" && (<>
                       <button
                         onClick={() =>
                           generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
@@ -3729,6 +3873,7 @@ export default function App() {
                       >
                         ✉
                       </button>
+                      </>)}
                       <button
                         onClick={() => setModal(task)}
                         style={{
@@ -3774,6 +3919,7 @@ export default function App() {
                         marginTop: 10,
                       }}
                     >
+                      {task.subtype !== "palets" && (<>
                       <button
                         onClick={() =>
                           generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
@@ -3836,6 +3982,7 @@ export default function App() {
                       >
                         ✉ Email
                       </button>
+                      </>)}
                       {isAdmin && (
                         <button
                           onClick={() => setDeleteId(task.id)}
