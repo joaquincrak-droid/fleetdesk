@@ -36,15 +36,64 @@ const RECOGIDA_DEFAULTS = {
 };
 
 // ── Supabase helpers ──────────────────────────────────────────
+// Refresca el access_token usando el refresh_token guardado en
+// localStorage. Devuelve el nuevo access_token o lanza error si
+// no hay refresh o ha caducado del todo.
+async function refreshSession() {
+  const rt = localStorage.getItem("fleet_refresh");
+  if (!rt) throw new Error("Sin refresh_token");
+  const res = await fetch(
+    `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
+    {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: rt }),
+    },
+  );
+  if (!res.ok) throw new Error("No se pudo refrescar la sesión");
+  const data = await res.json();
+  if (!data.access_token) throw new Error("Respuesta inválida al refrescar");
+  localStorage.setItem("fleet_token", data.access_token);
+  if (data.refresh_token) localStorage.setItem("fleet_refresh", data.refresh_token);
+  // Avisar a la app para que actualice el estado de React
+  window.dispatchEvent(
+    new CustomEvent("fleet:token-refreshed", { detail: data.access_token }),
+  );
+  return data.access_token;
+}
+
 async function sbFetch(path, options = {}, token = null) {
+  const useToken = token || localStorage.getItem("fleet_token") || SUPABASE_KEY;
   const headers = {
     apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${token || SUPABASE_KEY}`,
+    Authorization: `Bearer ${useToken}`,
     "Content-Type": "application/json",
     ...options.headers,
   };
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers });
-  if (!res.ok) throw new Error(await res.text());
+  let res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers });
+  if (!res.ok) {
+    const errText = await res.clone().text();
+    const isExpired =
+      res.status === 401 ||
+      errText.includes("JWT expired") ||
+      errText.includes("PGRST303");
+    if (isExpired) {
+      try {
+        const newToken = await refreshSession();
+        const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
+        res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+          ...options,
+          headers: retryHeaders,
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const t = await res.text();
+        return t ? JSON.parse(t) : [];
+      } catch {
+        throw new Error("Tu sesión ha expirado. Vuelve a iniciar sesión.");
+      }
+    }
+    throw new Error(errText);
+  }
   const text = await res.text();
   return text ? JSON.parse(text) : [];
 }
@@ -2686,6 +2735,16 @@ export default function App() {
   useEffect(() => {
     if (token && role) loadData();
   }, [token, role]);
+
+  // Cuando sbFetch refresca el token automáticamente, sincronizamos
+  // el estado de React para que las próximas llamadas usen el nuevo.
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail) setToken(e.detail);
+    };
+    window.addEventListener("fleet:token-refreshed", handler);
+    return () => window.removeEventListener("fleet:token-refreshed", handler);
+  }, []);
 
   const handleLogin = async (accessToken, userData, refreshToken = null) => {
     setLoading(true);
