@@ -1659,6 +1659,41 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
             {/* Datos DAT (Documento que Acompaña al Transporte) — solo en RECOGIDA */}
             {form.type === "recogida" && (
               <div style={{ display: "grid", gap: 10, padding: "4px 2px 2px" }}>
+                <div>
+                  <label style={labelStyle}>Ubicación de la recogida</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      value={form.address}
+                      style={{ ...inp, flex: 1 }}
+                      placeholder="Busca en el mapa →"
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowMap(true)}
+                      style={{
+                        width: 50,
+                        borderRadius: 10,
+                        border: form.lat ? "2px solid #4F46E5" : "1px solid #1E2D3D",
+                        background: form.lat ? "rgba(79,70,229,0.15)" : "#0D1B2A",
+                        cursor: "pointer",
+                        fontSize: 22,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      📍
+                    </button>
+                  </div>
+                  {form.lat && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: "#4F46E5" }}>
+                      ✓ Ubicación guardada en el mapa · el botón "🚗 Navegar" llevará al
+                      conductor hasta este punto en Google Maps.
+                    </div>
+                  )}
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
                     <label style={labelStyle}>Código LER</label>
