@@ -2549,7 +2549,7 @@ export default function App() {
       return (a.time || "99:99").localeCompare(b.time || "99:99");
     }
     if (sortBy === "cliente") {
-      return (a.client || "").localeCompare(b.client || "");
+      return (a.origin_name || a.client || "").localeCompare(b.origin_name || b.client || "");
     }
     // recientes: por created_at desc (ya vienen así del server, pero por seguridad)
     return (b.created_at || "").localeCompare(a.created_at || "");
@@ -3052,7 +3052,7 @@ export default function App() {
                       marginBottom: 4,
                     }}
                   >
-                    {task.client || "Sin cliente"}
+                    {task.origin_name || task.client || "Sin cliente"}
                   </div>
                   {task.address && !task.lat && (
                     <div style={{ color: "#64748B", fontSize: 13, marginBottom: 6 }}>
