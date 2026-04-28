@@ -3954,7 +3954,7 @@ export default function App() {
 
   if (!token) return <LoginScreen onLogin={handleLogin} />;
 
-  if (view === "ajustes") {
+  if (view === "ajustes" && isAdmin) {
     return (
       <div
         style={{
@@ -4121,23 +4121,25 @@ export default function App() {
                 👤
               </button>
             )}
-            <button
-              onClick={() => setView("ajustes")}
-              title="Ajustes"
-              style={{
-                background: "#1E2D3D",
-                border: "none",
-                color: "#94A3B8",
-                width: 34,
-                height: 34,
-                borderRadius: 10,
-                cursor: "pointer",
-                fontSize: 14,
-                fontFamily: "inherit",
-              }}
-            >
-              ⚙️
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setView("ajustes")}
+                title="Ajustes"
+                style={{
+                  background: "#1E2D3D",
+                  border: "none",
+                  color: "#94A3B8",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                }}
+              >
+                ⚙️
+              </button>
+            )}
             <button
               onClick={handleLogout}
               title="Cerrar sesión"
