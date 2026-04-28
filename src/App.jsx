@@ -2535,6 +2535,393 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
   );
 }
 
+// ── Captura de foto del albarán firmado ────────────────────
+// Comprime la imagen antes de enviarla para que el correo no
+// pese 5 MB (las fotos de móvil suelen ser enormes).
+function compressImage(file, maxW = 1280, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      c.toBlob(
+        (blob) => {
+          const r = new FileReader();
+          r.onload = () =>
+            resolve({
+              base64: r.result.split(",")[1],
+              dataUrl: r.result,
+              size: blob.size,
+            });
+          r.onerror = reject;
+          r.readAsDataURL(blob);
+        },
+        "image/jpeg",
+        quality,
+      );
+    };
+    img.onerror = reject;
+    const r = new FileReader();
+    r.onload = () => (img.src = r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function PhotoCaptureModal({ task, onClose, onAccept, sending = false, error = "" }) {
+  const [preview, setPreview] = useState(null);
+  const [base64, setBase64] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true);
+    try {
+      const { base64, dataUrl } = await compressImage(f);
+      setPreview(dataUrl);
+      setBase64(base64);
+    } catch {
+      alert("No se pudo cargar la imagen");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRetake = () => {
+    setPreview(null);
+    setBase64(null);
+    if (fileRef.current) fileRef.current.value = "";
+    setTimeout(() => fileRef.current?.click(), 50);
+  };
+
+  const cliente = task.origin_name || task.client || "Sin cliente";
+  const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.85)",
+        backdropFilter: "blur(8px)",
+        zIndex: 250,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={sending ? null : onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628",
+          border: "1px solid #1E2D3D",
+          borderRadius: 16,
+          padding: 18,
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "92vh",
+          overflowY: "auto",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", marginBottom: 4 }}>
+          📷 Albarán firmado
+        </div>
+        <div style={{ fontSize: 12, color: "#64748B", marginBottom: 14 }}>
+          {tipo} · {cliente}
+        </div>
+
+        {!preview ? (
+          <div
+            style={{
+              border: "2px dashed #1E2D3D",
+              borderRadius: 12,
+              padding: "28px 16px",
+              textAlign: "center",
+              color: "#94A3B8",
+              fontSize: 14,
+              marginBottom: 14,
+            }}
+          >
+            <div style={{ fontSize: 36, marginBottom: 10 }}>📷</div>
+            <div style={{ marginBottom: 14 }}>
+              Haz una foto al albarán firmado por el cliente.
+            </div>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              style={{
+                padding: "12px 22px",
+                borderRadius: 10,
+                border: "none",
+                background: "linear-gradient(135deg,#4F46E5,#7C3AED)",
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 700,
+                fontSize: 14,
+              }}
+            >
+              {busy ? "Cargando…" : "Abrir cámara"}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFile}
+              style={{ display: "none" }}
+            />
+          </div>
+        ) : (
+          <div style={{ marginBottom: 14 }}>
+            <img
+              src={preview}
+              alt="Preview albarán"
+              style={{
+                width: "100%",
+                maxHeight: 420,
+                objectFit: "contain",
+                borderRadius: 10,
+                border: "1px solid #1E2D3D",
+                display: "block",
+              }}
+            />
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 6, textAlign: "center" }}>
+              Revisa que se lea la firma y los datos antes de aceptar.
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "rgba(248,113,113,0.12)",
+              color: "#F87171",
+              fontSize: 12,
+              marginBottom: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+          <button
+            onClick={onClose}
+            disabled={sending}
+            style={{
+              padding: "11px 16px",
+              borderRadius: 10,
+              border: "1px solid #1E2D3D",
+              background: "transparent",
+              color: "#64748B",
+              cursor: sending ? "not-allowed" : "pointer",
+              fontWeight: 600,
+              fontSize: 13,
+            }}
+          >
+            Cancelar
+          </button>
+          {preview && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={handleRetake}
+                disabled={sending}
+                style={{
+                  padding: "11px 16px",
+                  borderRadius: 10,
+                  border: "1px solid #1E2D3D",
+                  background: "transparent",
+                  color: "#94A3B8",
+                  cursor: sending ? "not-allowed" : "pointer",
+                  fontWeight: 600,
+                  fontSize: 13,
+                }}
+              >
+                ↻ Repetir
+              </button>
+              <button
+                onClick={() => onAccept(base64)}
+                disabled={sending}
+                style={{
+                  padding: "11px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: sending
+                    ? "#1E2D3D"
+                    : "linear-gradient(135deg,#10B981,#059669)",
+                  color: sending ? "#475569" : "#fff",
+                  cursor: sending ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  fontSize: 13,
+                }}
+              >
+                {sending ? "Enviando…" : "✓ Aceptar y enviar"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Genera un PDF A4 con la foto del albarán + cabecera de datos
+// y lo devuelve en base64 (sin el prefijo data:).
+async function generateAlbaranPdf(task, photoBase64) {
+  await loadJsPdf();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const M = 15;
+  const W = 210 - 2 * M;        // 180
+
+  const cliente = task.origin_name || task.client || "(sin cliente)";
+  const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
+  const fecha = new Date().toLocaleDateString("es-ES");
+  const hora = new Date().toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const cantidad = task.quantity || task.weight || "";
+
+  // Cabecera
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text("ALBARÁN FIRMADO", 105, M + 4, { align: "center" });
+
+  // Caja de datos
+  let y = M + 10;
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.1);
+  doc.setFillColor(245, 245, 245);
+  doc.rect(M, y, W, 28, "FD");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  const labelX = M + 3;
+  const valueX = M + 32;
+  doc.text("Tipo:", labelX, y + 5);
+  doc.text("Cliente:", labelX, y + 10);
+  if (cantidad) doc.text("Cantidad:", labelX, y + 15);
+  if (task.order_number) doc.text("Nº pedido:", labelX, y + 20);
+  doc.text("Fecha y hora:", labelX, y + 25);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(20, 20, 20);
+  doc.text(`${tipo}${task.subtype === "palets" ? " (palets)" : ""}`, valueX, y + 5);
+  doc.text(cliente, valueX, y + 10, { maxWidth: W - 35 });
+  if (cantidad) doc.text(String(cantidad), valueX, y + 15);
+  if (task.order_number) doc.text(String(task.order_number), valueX, y + 20);
+  doc.text(`${fecha} ${hora}`, valueX, y + 25);
+  y += 32;
+
+  // Imagen del albarán: ocupa el resto de la página manteniendo proporción
+  const imgX = M;
+  const imgY = y;
+  const maxW = W;
+  const maxH = 297 - imgY - 12;        // dejar margen inferior
+
+  // Necesitamos las dimensiones para mantener aspect ratio
+  const dims = await new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve({ w: im.width, h: im.height });
+    im.onerror = () => resolve({ w: maxW, h: maxH });
+    im.src = "data:image/jpeg;base64," + photoBase64;
+  });
+  const ratio = Math.min(maxW / dims.w, maxH / dims.h);
+  const drawW = dims.w * ratio;
+  const drawH = dims.h * ratio;
+  const drawX = imgX + (maxW - drawW) / 2;     // centrado horizontalmente
+  doc.addImage("data:image/jpeg;base64," + photoBase64, "JPEG", drawX, imgY, drawW, drawH);
+
+  // Pie
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    "Albarán generado con FleetDesk al marcar la tarea como completada.",
+    M, 297 - 5,
+  );
+
+  const dataUri = doc.output("datauristring");
+  return dataUri.split(",")[1];
+}
+
+// Envía el albarán firmado en PDF al correo configurado en Ajustes
+// (settings.email) usando la misma edge function de Microsoft Graph.
+async function sendDeliveryPhoto(task, photoBase64, recipientEmail, accessToken) {
+  if (!recipientEmail) throw new Error("No hay correo destinatario configurado");
+  const fecha = new Date().toLocaleDateString("es-ES");
+  const hora = new Date().toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const cliente = task.origin_name || task.client || "(sin cliente)";
+  const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
+  const cantidad = task.quantity || task.weight || "";
+  const safeCliente = cliente
+    .toString()
+    .replace(/[^a-z0-9]+/gi, "_")
+    .toLowerCase()
+    .slice(0, 24);
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  const pdfBase64 = await generateAlbaranPdf(task, photoBase64);
+
+  const subject = `Albarán firmado · ${tipo} ${cliente} · ${fecha}`;
+  const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
+<p>Se adjunta el albarán firmado en PDF correspondiente a:</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Tipo</td><td><strong>${tipo}${task.subtype === "palets" ? " (palets)" : ""}</strong></td></tr>
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cliente</td><td><strong>${cliente}</strong></td></tr>
+  ${cantidad ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cantidad</td><td><strong>${cantidad}</strong></td></tr>` : ""}
+  ${task.order_number ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº pedido</td><td><strong>${task.order_number}</strong></td></tr>` : ""}
+  ${task.address ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Dirección</td><td>${task.address}</td></tr>` : ""}
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${fecha} ${hora}</td></tr>
+</table>
+<hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
+<p style="color:#888;font-size:9pt;">Generado automáticamente por FleetDesk al marcar la tarea como completada.</p>
+</body></html>`;
+
+  const attachments = [
+    {
+      filename: `albaran_${safeCliente}_${stamp}.pdf`,
+      contentType: "application/pdf",
+      contentBase64: pdfBase64,
+    },
+  ];
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${accessToken || SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: recipientEmail,
+      subject,
+      bodyHtml,
+      attachments,
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Error enviando email: ${txt}`);
+  }
+  return { sentTo: recipientEmail };
+}
+
 function DeleteModal({ onConfirm, onCancel, loading }) {
   return (
     <div
@@ -2826,6 +3213,9 @@ export default function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [operators, setOperators] = useState([]);
   const [showOperators, setShowOperators] = useState(false);
+  const [photoTask, setPhotoTask] = useState(null);    // tarea pendiente de foto albarán
+  const [photoSending, setPhotoSending] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -3156,6 +3546,40 @@ export default function App() {
       await loadData();
     } catch {
       setError("Error al actualizar.");
+    }
+  };
+
+  // Atajo: abre la cámara para escanear el albarán cuando es entrega
+  // o recogida de palets, y completa la tarea automáticamente al
+  // aceptar la foto. Para recogidas de residuos no hace falta foto
+  // (ya tienen el DIR), así que cae al markComplete normal.
+  const handleCompleteTask = (task) => {
+    const needsPhoto =
+      task.type === "entrega" ||
+      (task.type === "recogida" && task.subtype === "palets");
+    if (!needsPhoto) {
+      markComplete(task.id);
+      return;
+    }
+    setPhotoError("");
+    setPhotoTask(task);
+  };
+
+  const handlePhotoAccept = async (base64) => {
+    if (!photoTask) return;
+    const dest =
+      settings?.email ||
+      "recipalets@jcpalets.com";
+    setPhotoSending(true);
+    setPhotoError("");
+    try {
+      await sendDeliveryPhoto(photoTask, base64, dest, token);
+      await markComplete(photoTask.id);
+      setPhotoTask(null);
+    } catch (e) {
+      setPhotoError(e.message || "Error al enviar la foto.");
+    } finally {
+      setPhotoSending(false);
     }
   };
 
@@ -3773,7 +4197,7 @@ export default function App() {
                   {!isCompleted && (
                     <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                       <button
-                        onClick={() => markComplete(task.id)}
+                        onClick={() => handleCompleteTask(task)}
                         style={{
                           flex: 2,
                           minWidth: 120,
@@ -4064,6 +4488,19 @@ export default function App() {
           onClose={() => setShowOperators(false)}
           onSave={saveOperator}
           onDelete={deleteOperator}
+        />
+      )}
+      {photoTask && (
+        <PhotoCaptureModal
+          task={photoTask}
+          sending={photoSending}
+          error={photoError}
+          onClose={() => {
+            if (photoSending) return;
+            setPhotoTask(null);
+            setPhotoError("");
+          }}
+          onAccept={handlePhotoAccept}
         />
       )}
     </div>
