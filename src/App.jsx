@@ -1665,21 +1665,21 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
+                <label style={labelStyle}>Fecha de entrega</label>
+                <input
+                  type="date"
+                  value={form.transport_date || ""}
+                  onChange={(e) => set("transport_date", e.target.value)}
+                  style={inp}
+                />
+              </div>
+              <div>
                 <label style={labelStyle}>Hora</label>
                 <input
                   type="time"
                   value={form.time}
                   onChange={(e) => set("time", e.target.value)}
                   style={inp}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Peso</label>
-                <input
-                  value={form.weight}
-                  onChange={(e) => set("weight", e.target.value)}
-                  style={inp}
-                  placeholder="ej. 200 kg"
                 />
               </div>
             </div>
@@ -1702,6 +1702,18 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                   placeholder="ej. PED-2026-0123"
                 />
               </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={labelStyle}>Peso</label>
+                <input
+                  value={form.weight}
+                  onChange={(e) => set("weight", e.target.value)}
+                  style={inp}
+                  placeholder="ej. 200 kg"
+                />
+              </div>
+              <div />
             </div>
             {isAdmin && (
               <div>
@@ -4507,7 +4519,7 @@ export default function App() {
                   >
                     <TypeBadge type={task.type} />
                     <Badge status={task.status} />
-                    {task.time && (
+                    {(task.transport_date || task.time) && (
                       <span
                         style={{
                           marginLeft: "auto",
@@ -4516,7 +4528,9 @@ export default function App() {
                           fontWeight: 600,
                         }}
                       >
-                        🕐 {task.time}
+                        {task.transport_date ? `📅 ${fmtDate(task.transport_date)}` : ""}
+                        {task.transport_date && task.time ? " · " : ""}
+                        {task.time ? `🕐 ${task.time}` : ""}
                       </span>
                     )}
                   </div>
