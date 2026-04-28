@@ -2580,6 +2580,7 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
   const [preview, setPreview] = useState(null);
   const [base64, setBase64] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [pdfName, setPdfName] = useState("");
   const fileRef = useRef(null);
 
   const handleFile = async (e) => {
@@ -2697,7 +2698,7 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
               alt="Preview albarán"
               style={{
                 width: "100%",
-                maxHeight: 420,
+                maxHeight: 360,
                 objectFit: "contain",
                 borderRadius: 10,
                 border: "1px solid #1E2D3D",
@@ -2705,7 +2706,43 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
               }}
             />
             <div style={{ fontSize: 11, color: "#475569", marginTop: 6, textAlign: "center" }}>
-              Revisa que se lea la firma y los datos antes de aceptar.
+              Revisa que se lea la firma antes de aceptar.
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "#64748B",
+                  fontWeight: 600,
+                  marginBottom: 4,
+                  display: "block",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Nombre del PDF
+              </label>
+              <input
+                value={pdfName}
+                onChange={(e) => setPdfName(e.target.value)}
+                placeholder="ej. Albarán Fripozo 27-04"
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "11px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #1E2D3D",
+                  background: "#0F1E33",
+                  color: "#E2E8F0",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                Se guardará como “{(pdfName.trim() || "(escribe un nombre)").replace(/\.pdf$/i, "")}.pdf”.
+              </div>
             </div>
           </div>
         )}
@@ -2761,17 +2798,25 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
                 ↻ Repetir
               </button>
               <button
-                onClick={() => onAccept(base64)}
-                disabled={sending}
+                onClick={() => {
+                  const name = pdfName.trim();
+                  if (!name) {
+                    alert("Escribe el nombre del PDF antes de enviar.");
+                    return;
+                  }
+                  onAccept(base64, name);
+                }}
+                disabled={sending || !pdfName.trim()}
                 style={{
                   padding: "11px 18px",
                   borderRadius: 10,
                   border: "none",
-                  background: sending
-                    ? "#1E2D3D"
-                    : "linear-gradient(135deg,#10B981,#059669)",
-                  color: sending ? "#475569" : "#fff",
-                  cursor: sending ? "not-allowed" : "pointer",
+                  background:
+                    sending || !pdfName.trim()
+                      ? "#1E2D3D"
+                      : "linear-gradient(135deg,#10B981,#059669)",
+                  color: sending || !pdfName.trim() ? "#475569" : "#fff",
+                  cursor: sending || !pdfName.trim() ? "not-allowed" : "pointer",
                   fontWeight: 700,
                   fontSize: 13,
                 }}
@@ -2887,7 +2932,7 @@ async function sendDeliveryPhoto(
   recipientEmail,
   accessToken,
   truck = null,
-  receivedBy = ""
+  customName = ""
 ) {
   if (!recipientEmail) throw new Error("No hay correo destinatario configurado");
   const fecha = new Date().toLocaleDateString("es-ES");
@@ -2907,7 +2952,21 @@ async function sendDeliveryPhoto(
     .slice(0, 24);
   const stamp = new Date().toISOString().slice(0, 10);
 
-  const pdfBase64 = await generateAlbaranPdf(task, photoBase64, truck, receivedBy);
+  const pdfBase64 = await generateAlbaranPdf(task, photoBase64, truck);
+
+  // Nombre del PDF: si el chófer ha escrito uno, lo usamos.
+  // Saneamos caracteres no válidos para nombres de archivo y
+  // garantizamos extensión .pdf.
+  let pdfFilename;
+  if (customName && customName.trim()) {
+    const cleaned = customName
+      .trim()
+      .replace(/\.pdf$/i, "")
+      .replace(/[\\/:*?"<>|]+/g, "_");
+    pdfFilename = `${cleaned || "albaran"}.pdf`;
+  } else {
+    pdfFilename = `albaran_${safeCliente}_${stamp}.pdf`;
+  }
 
   const subject = `Albarán firmado · ${tipo} ${cliente} · ${fecha}`;
   const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
@@ -2918,7 +2977,6 @@ async function sendDeliveryPhoto(
   ${cantidad ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cantidad</td><td><strong>${cantidad}</strong></td></tr>` : ""}
   ${task.order_number ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº pedido</td><td><strong>${task.order_number}</strong></td></tr>` : ""}
   ${conductor || matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Camión</td><td><strong>${[conductor, matricula ? `(${matricula})` : ""].filter(Boolean).join(" ")}</strong></td></tr>` : ""}
-  ${receivedBy ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Recibido por</td><td><strong>${receivedBy}</strong></td></tr>` : ""}
   ${task.address ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Dirección</td><td>${task.address}</td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${fecha} ${hora}</td></tr>
 </table>
@@ -2928,7 +2986,7 @@ async function sendDeliveryPhoto(
 
   const attachments = [
     {
-      filename: `albaran_${safeCliente}_${stamp}.pdf`,
+      filename: pdfFilename,
       contentType: "application/pdf",
       contentBase64: pdfBase64,
     },
@@ -3598,7 +3656,7 @@ export default function App() {
     setPhotoTask(task);
   };
 
-  const handlePhotoAccept = async (base64) => {
+  const handlePhotoAccept = async (base64, customName = "") => {
     if (!photoTask) return;
     const dest =
       settings?.email ||
@@ -3607,7 +3665,7 @@ export default function App() {
     setPhotoSending(true);
     setPhotoError("");
     try {
-      await sendDeliveryPhoto(photoTask, base64, dest, token, truck);
+      await sendDeliveryPhoto(photoTask, base64, dest, token, truck, customName);
       await markComplete(photoTask.id);
       setPhotoTask(null);
     } catch (e) {
