@@ -4,9 +4,12 @@ const SUPABASE_URL = "https://jfzyueilhrbzkvllyjfd.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
 
+// Camiones de la flota. La matrícula aparece en el PDF del albarán
+// y en el cuerpo del correo. Si cambias un camión actualiza aquí
+// el campo "plate".
 const trucks = [
-  { id: "T-01", name: "Camión 1", driver: "Miguel" },
-  { id: "T-02", name: "Camión 2", driver: "Juan" },
+  { id: "T-01", name: "Camión 1", driver: "Miguel", plate: "9390MMC" },
+  { id: "T-02", name: "Camión 2", driver: "Juan",   plate: "6598MRY" },
 ];
 
 const STATUS_CONFIG = {
@@ -2573,7 +2576,7 @@ function compressImage(file, maxW = 1280, quality = 0.85) {
   });
 }
 
-function PhotoCaptureModal({ task, onClose, onAccept, sending = false, error = "" }) {
+function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, error = "" }) {
   const [preview, setPreview] = useState(null);
   const [base64, setBase64] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -2637,6 +2640,12 @@ function PhotoCaptureModal({ task, onClose, onAccept, sending = false, error = "
         </div>
         <div style={{ fontSize: 12, color: "#64748B", marginBottom: 14 }}>
           {tipo} · {cliente}
+          {truck && (
+            <>
+              {" · "}
+              {truck.driver} ({truck.plate || truck.id})
+            </>
+          )}
         </div>
 
         {!preview ? (
@@ -2779,7 +2788,7 @@ function PhotoCaptureModal({ task, onClose, onAccept, sending = false, error = "
 
 // Genera un PDF A4 con la foto del albarán + cabecera de datos
 // y lo devuelve en base64 (sin el prefijo data:).
-async function generateAlbaranPdf(task, photoBase64) {
+async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = "") {
   await loadJsPdf();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -2794,36 +2803,49 @@ async function generateAlbaranPdf(task, photoBase64) {
     minute: "2-digit",
   });
   const cantidad = task.quantity || task.weight || "";
+  const conductor = truck?.driver || "";
+  const matricula = truck?.plate || "";
 
   // Cabecera
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.text("ALBARÁN FIRMADO", 105, M + 4, { align: "center" });
 
-  // Caja de datos
+  // Caja de datos: filas dinámicas según los campos disponibles
+  const rows = [];
+  rows.push(["Tipo", `${tipo}${task.subtype === "palets" ? " (palets)" : ""}`]);
+  rows.push(["Cliente", cliente]);
+  if (cantidad) rows.push(["Cantidad", String(cantidad)]);
+  if (task.order_number) rows.push(["Nº pedido", String(task.order_number)]);
+  if (conductor || matricula) {
+    rows.push([
+      "Camión",
+      [conductor, matricula ? `(${matricula})` : ""].filter(Boolean).join(" "),
+    ]);
+  }
+  if (receivedBy) rows.push(["Recibido por", receivedBy]);
+  rows.push(["Fecha y hora", `${fecha} ${hora}`]);
+
   let y = M + 10;
+  const rowH = 5;
+  const boxH = rows.length * rowH + 4;
   doc.setDrawColor(0);
   doc.setLineWidth(0.1);
   doc.setFillColor(245, 245, 245);
-  doc.rect(M, y, W, 28, "FD");
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 100);
+  doc.rect(M, y, W, boxH, "FD");
   const labelX = M + 3;
   const valueX = M + 32;
-  doc.text("Tipo:", labelX, y + 5);
-  doc.text("Cliente:", labelX, y + 10);
-  if (cantidad) doc.text("Cantidad:", labelX, y + 15);
-  if (task.order_number) doc.text("Nº pedido:", labelX, y + 20);
-  doc.text("Fecha y hora:", labelX, y + 25);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 20, 20);
-  doc.text(`${tipo}${task.subtype === "palets" ? " (palets)" : ""}`, valueX, y + 5);
-  doc.text(cliente, valueX, y + 10, { maxWidth: W - 35 });
-  if (cantidad) doc.text(String(cantidad), valueX, y + 15);
-  if (task.order_number) doc.text(String(task.order_number), valueX, y + 20);
-  doc.text(`${fecha} ${hora}`, valueX, y + 25);
-  y += 32;
+  rows.forEach((r, i) => {
+    const yy = y + 4 + i * rowH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${r[0]}:`, labelX, yy);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(20, 20, 20);
+    doc.text(r[1], valueX, yy, { maxWidth: W - 35 });
+  });
+  y += boxH + 4;
 
   // Imagen del albarán: ocupa el resto de la página manteniendo proporción
   const imgX = M;
@@ -2859,7 +2881,14 @@ async function generateAlbaranPdf(task, photoBase64) {
 
 // Envía el albarán firmado en PDF al correo configurado en Ajustes
 // (settings.email) usando la misma edge function de Microsoft Graph.
-async function sendDeliveryPhoto(task, photoBase64, recipientEmail, accessToken) {
+async function sendDeliveryPhoto(
+  task,
+  photoBase64,
+  recipientEmail,
+  accessToken,
+  truck = null,
+  receivedBy = ""
+) {
   if (!recipientEmail) throw new Error("No hay correo destinatario configurado");
   const fecha = new Date().toLocaleDateString("es-ES");
   const hora = new Date().toLocaleTimeString("es-ES", {
@@ -2869,6 +2898,8 @@ async function sendDeliveryPhoto(task, photoBase64, recipientEmail, accessToken)
   const cliente = task.origin_name || task.client || "(sin cliente)";
   const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
   const cantidad = task.quantity || task.weight || "";
+  const conductor = truck?.driver || "";
+  const matricula = truck?.plate || "";
   const safeCliente = cliente
     .toString()
     .replace(/[^a-z0-9]+/gi, "_")
@@ -2876,7 +2907,7 @@ async function sendDeliveryPhoto(task, photoBase64, recipientEmail, accessToken)
     .slice(0, 24);
   const stamp = new Date().toISOString().slice(0, 10);
 
-  const pdfBase64 = await generateAlbaranPdf(task, photoBase64);
+  const pdfBase64 = await generateAlbaranPdf(task, photoBase64, truck, receivedBy);
 
   const subject = `Albarán firmado · ${tipo} ${cliente} · ${fecha}`;
   const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
@@ -2886,6 +2917,8 @@ async function sendDeliveryPhoto(task, photoBase64, recipientEmail, accessToken)
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cliente</td><td><strong>${cliente}</strong></td></tr>
   ${cantidad ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cantidad</td><td><strong>${cantidad}</strong></td></tr>` : ""}
   ${task.order_number ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº pedido</td><td><strong>${task.order_number}</strong></td></tr>` : ""}
+  ${conductor || matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Camión</td><td><strong>${[conductor, matricula ? `(${matricula})` : ""].filter(Boolean).join(" ")}</strong></td></tr>` : ""}
+  ${receivedBy ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Recibido por</td><td><strong>${receivedBy}</strong></td></tr>` : ""}
   ${task.address ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Dirección</td><td>${task.address}</td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${fecha} ${hora}</td></tr>
 </table>
@@ -3570,10 +3603,11 @@ export default function App() {
     const dest =
       settings?.email ||
       "recipalets@jcpalets.com";
+    const truck = trucks.find((t) => t.id === photoTask.truck) || null;
     setPhotoSending(true);
     setPhotoError("");
     try {
-      await sendDeliveryPhoto(photoTask, base64, dest, token);
+      await sendDeliveryPhoto(photoTask, base64, dest, token, truck);
       await markComplete(photoTask.id);
       setPhotoTask(null);
     } catch (e) {
@@ -4493,6 +4527,7 @@ export default function App() {
       {photoTask && (
         <PhotoCaptureModal
           task={photoTask}
+          truck={trucks.find((t) => t.id === photoTask.truck) || null}
           sending={photoSending}
           error={photoError}
           onClose={() => {
