@@ -1802,7 +1802,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                   </div>
                 </div>
 
-                {/* RECOGIDA DE PALETS — sin DIR, solo cantidad + hora + notas */}
+                {/* RECOGIDA DE PALETS — formato similar al de entregas */}
                 {form.subtype === "palets" && (
                   <>
                     <div style={{ position: "relative" }}>
@@ -1851,16 +1851,6 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
-                        <label style={labelStyle}>Cantidad de palets</label>
-                        <input
-                          type="number"
-                          value={form.quantity || ""}
-                          onChange={(e) => set("quantity", e.target.value)}
-                          style={inp}
-                          placeholder="ej. 50"
-                        />
-                      </div>
-                      <div>
                         <label style={labelStyle}>Hora</label>
                         <input
                           type="time"
@@ -1869,14 +1859,59 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                           style={inp}
                         />
                       </div>
+                      <div>
+                        <label style={labelStyle}>Peso</label>
+                        <input
+                          value={form.weight || ""}
+                          onChange={(e) => set("weight", e.target.value)}
+                          style={inp}
+                          placeholder="ej. 800 kg"
+                        />
+                      </div>
                     </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label style={labelStyle}>Cantidad / tipo de palets</label>
+                        <input
+                          value={form.quantity || ""}
+                          onChange={(e) => set("quantity", e.target.value)}
+                          style={inp}
+                          placeholder="ej. 20 europalet, 5 americanos"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Número de pedido</label>
+                        <input
+                          value={form.order_number || ""}
+                          onChange={(e) => set("order_number", e.target.value)}
+                          style={inp}
+                          placeholder="ej. PED-2026-0123"
+                        />
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div>
+                        <label style={labelStyle}>Estado</label>
+                        <select
+                          value={form.status}
+                          onChange={(e) => set("status", e.target.value)}
+                          style={inp}
+                        >
+                          {Object.entries(STATUS_CONFIG).map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {v.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div>
                       <label style={labelStyle}>Notas</label>
                       <input
                         value={form.notes || ""}
                         onChange={(e) => set("notes", e.target.value)}
                         style={inp}
-                        placeholder="Tipo de palet, instrucciones especiales…"
+                        placeholder="Instrucciones especiales…"
                       />
                     </div>
                   </>
@@ -2795,6 +2830,9 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
 
   const cliente = task.origin_name || task.client || "Sin cliente";
   const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
+  // En recogidas de palets el nombre del PDF se genera automático.
+  // En entregas (y otros) se le pide al chófer que lo escriba.
+  const askName = !(task.type === "recogida" && task.subtype === "palets");
 
   return (
     <div
@@ -2896,42 +2934,44 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
             <div style={{ fontSize: 11, color: "#475569", marginTop: 6, textAlign: "center" }}>
               Revisa que se lea la firma antes de aceptar.
             </div>
-            <div style={{ marginTop: 12 }}>
-              <label
-                style={{
-                  fontSize: 11,
-                  color: "#64748B",
-                  fontWeight: 600,
-                  marginBottom: 4,
-                  display: "block",
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Nombre del PDF
-              </label>
-              <input
-                value={pdfName}
-                onChange={(e) => setPdfName(e.target.value)}
-                placeholder="ej. Albarán Fripozo 27-04"
-                autoFocus
-                style={{
-                  width: "100%",
-                  padding: "11px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #1E2D3D",
-                  background: "#0F1E33",
-                  color: "#E2E8F0",
-                  fontSize: 14,
-                  fontFamily: "inherit",
-                  outline: "none",
-                  boxSizing: "border-box",
-                }}
-              />
-              <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
-                Se guardará como “{(pdfName.trim() || "(escribe un nombre)").replace(/\.pdf$/i, "")}.pdf”.
+            {askName && (
+              <div style={{ marginTop: 12 }}>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: "#64748B",
+                    fontWeight: 600,
+                    marginBottom: 4,
+                    display: "block",
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Nombre del PDF
+                </label>
+                <input
+                  value={pdfName}
+                  onChange={(e) => setPdfName(e.target.value)}
+                  placeholder="ej. Albarán Fripozo 27-04"
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    padding: "11px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #1E2D3D",
+                    background: "#0F1E33",
+                    color: "#E2E8F0",
+                    fontSize: 14,
+                    fontFamily: "inherit",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                  Se guardará como “{(pdfName.trim() || "(escribe un nombre)").replace(/\.pdf$/i, "")}.pdf”.
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -2987,24 +3027,30 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
               </button>
               <button
                 onClick={() => {
-                  const name = pdfName.trim();
-                  if (!name) {
-                    alert("Escribe el nombre del PDF antes de enviar.");
-                    return;
+                  if (askName) {
+                    const name = pdfName.trim();
+                    if (!name) {
+                      alert("Escribe el nombre del PDF antes de enviar.");
+                      return;
+                    }
+                    onAccept(base64, name);
+                  } else {
+                    // Recogida de palets: nombre auto-generado
+                    onAccept(base64, "");
                   }
-                  onAccept(base64, name);
                 }}
-                disabled={sending || !pdfName.trim()}
+                disabled={sending || (askName && !pdfName.trim())}
                 style={{
                   padding: "11px 18px",
                   borderRadius: 10,
                   border: "none",
                   background:
-                    sending || !pdfName.trim()
+                    sending || (askName && !pdfName.trim())
                       ? "#1E2D3D"
                       : "linear-gradient(135deg,#10B981,#059669)",
-                  color: sending || !pdfName.trim() ? "#475569" : "#fff",
-                  cursor: sending || !pdfName.trim() ? "not-allowed" : "pointer",
+                  color: sending || (askName && !pdfName.trim()) ? "#475569" : "#fff",
+                  cursor:
+                    sending || (askName && !pdfName.trim()) ? "not-allowed" : "pointer",
                   fontWeight: 700,
                   fontSize: 13,
                 }}
@@ -3143,8 +3189,7 @@ async function sendDeliveryPhoto(
   const pdfBase64 = await generateAlbaranPdf(task, photoBase64, truck);
 
   // Nombre del PDF: si el chófer ha escrito uno, lo usamos.
-  // Saneamos caracteres no válidos para nombres de archivo y
-  // garantizamos extensión .pdf.
+  // Si no, se autogenera según el tipo de tarea.
   let pdfFilename;
   if (customName && customName.trim()) {
     const cleaned = customName
@@ -3153,7 +3198,11 @@ async function sendDeliveryPhoto(
       .replace(/[\\/:*?"<>|]+/g, "_");
     pdfFilename = `${cleaned || "albaran"}.pdf`;
   } else {
-    pdfFilename = `albaran_${safeCliente}_${stamp}.pdf`;
+    const prefix =
+      task.type === "recogida" && task.subtype === "palets"
+        ? "recogida_palets"
+        : "albaran";
+    pdfFilename = `${prefix}_${safeCliente}_${stamp}.pdf`;
   }
 
   const subject = `Albarán firmado · ${tipo} ${cliente} · ${fecha}`;
