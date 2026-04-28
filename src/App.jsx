@@ -4232,7 +4232,7 @@ export default function App() {
                       >
                         ⟳ Estado
                       </button>
-                      {task.subtype !== "palets" && (<>
+                      {task.type === "recogida" && task.subtype !== "palets" && (<>
                       <button
                         onClick={() =>
                           generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
@@ -4343,7 +4343,7 @@ export default function App() {
                         marginTop: 10,
                       }}
                     >
-                      {task.subtype !== "palets" && (<>
+                      {task.type === "recogida" && task.subtype !== "palets" && (<>
                       <button
                         onClick={() =>
                           generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
