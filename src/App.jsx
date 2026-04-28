@@ -965,7 +965,7 @@ async function generateDIR(task, settings, truck, opts = {}) {
   doc.setFontSize(6.5);
   doc.setTextColor(120, 120, 120);
   doc.text(
-    "DIR generado con FleetDesk · Conserve una copia durante el transporte.",
+    "Documento generado por RECIPALETS TOTANA S.L. · Conserve una copia durante el transporte.",
     M, PAGE_H - 6
   );
 
@@ -2538,6 +2538,194 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
   );
 }
 
+// ── Users / Permissions Modal ────────────────────────────────
+// Sólo visible para administradores. Lista todos los usuarios
+// (auth.users via la columna email de profiles) y deja cambiar
+// el rol (admin / conductor) y el camión asignado.
+function UsersListModal({ token, trucks = [], onClose }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await sbFetch(
+          "profiles?select=id,email,role,truck_id&order=email.asc",
+          {},
+          token
+        );
+        if (alive) setUsers(data || []);
+      } catch (e) {
+        if (alive) setError("No se pudieron cargar los usuarios: " + e.message);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  const updateUser = async (user, changes) => {
+    setSavingId(user.id);
+    setError("");
+    try {
+      await sbFetch(
+        `profiles?id=eq.${user.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(changes),
+          headers: { Prefer: "return=minimal" },
+        },
+        token
+      );
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...changes } : u)));
+    } catch (e) {
+      setError("No se pudo guardar: " + e.message);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const inputStyle = {
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "1px solid #1E2D3D",
+    background: "#0F1E33",
+    color: "#E2E8F0",
+    fontSize: 12,
+    fontFamily: "inherit",
+    outline: "none",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)", zIndex: 200, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 640, maxHeight: "90vh",
+          display: "flex", flexDirection: "column", gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", flex: 1 }}>
+            Usuarios y permisos ({users.length})
+          </div>
+        </div>
+        {error && (
+          <div
+            style={{
+              padding: "10px 12px", borderRadius: 10,
+              background: "rgba(248,113,113,0.12)", color: "#F87171",
+              fontSize: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+        <div
+          style={{
+            flex: 1, overflowY: "auto", border: "1px solid #1E2D3D",
+            borderRadius: 10, background: "#0D1B2A",
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              Cargando…
+            </div>
+          ) : users.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              No hay usuarios registrados todavía.
+            </div>
+          ) : (
+            users.map((u, i) => (
+              <div
+                key={u.id}
+                style={{
+                  padding: "14px",
+                  borderBottom: i < users.length - 1 ? "1px solid #1E2D3D" : "none",
+                  display: "grid",
+                  gridTemplateColumns: "1fr 130px 130px",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      color: "#F1F5F9", fontWeight: 700, fontSize: 13,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {u.email || "(sin email)"}
+                  </div>
+                  <div style={{ color: "#64748B", fontSize: 10, marginTop: 2 }}>
+                    {u.role === "admin" ? "Administrador" : "Conductor"}
+                    {u.truck_id ? ` · ${u.truck_id}` : ""}
+                  </div>
+                </div>
+                <select
+                  value={u.role || "conductor"}
+                  onChange={(e) => updateUser(u, { role: e.target.value })}
+                  disabled={savingId === u.id}
+                  style={inputStyle}
+                >
+                  <option value="conductor">Conductor</option>
+                  <option value="admin">Administrador</option>
+                </select>
+                <select
+                  value={u.truck_id || ""}
+                  onChange={(e) =>
+                    updateUser(u, { truck_id: e.target.value || null })
+                  }
+                  disabled={savingId === u.id || u.role === "admin"}
+                  style={inputStyle}
+                >
+                  <option value="">— sin camión —</option>
+                  {trucks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.id} · {t.driver}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: "#475569", padding: "0 4px" }}>
+          Para añadir un usuario nuevo: pídele que se registre en la app o
+          créalo desde Supabase → Authentication → Users. Aparecerá aquí
+          automáticamente como conductor sin camión asignado.
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+              background: "transparent", color: "#94A3B8", cursor: "pointer",
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Captura de foto del albarán firmado ────────────────────
 // Comprime la imagen antes de enviarla para que el correo no
 // pese 5 MB (las fotos de móvil suelen ser enormes).
@@ -2916,7 +3104,7 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   doc.setFontSize(7.5);
   doc.setTextColor(120, 120, 120);
   doc.text(
-    "Albarán generado con FleetDesk al marcar la tarea como completada.",
+    "Documento generado por RECIPALETS TOTANA S.L. al marcar la tarea como completada.",
     M, 297 - 5,
   );
 
@@ -2981,7 +3169,7 @@ async function sendDeliveryPhoto(
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${fecha} ${hora}</td></tr>
 </table>
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
-<p style="color:#888;font-size:9pt;">Generado automáticamente por FleetDesk al marcar la tarea como completada.</p>
+<p style="color:#888;font-size:9pt;">Generado automáticamente por RECIPALETS TOTANA S.L. al marcar la tarea como completada.</p>
 </body></html>`;
 
   const attachments = [
@@ -3304,6 +3492,7 @@ export default function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [operators, setOperators] = useState([]);
   const [showOperators, setShowOperators] = useState(false);
+  const [showUsers, setShowUsers] = useState(false);
   const [photoTask, setPhotoTask] = useState(null);    // tarea pendiente de foto albarán
   const [photoSending, setPhotoSending] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -3402,12 +3591,17 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [active, done, sett, ops] = await Promise.all([
+      const isAdminLocal = role === "admin";
+      const queries = [
         sbFetch("tasks?order=created_at.desc&status=neq.completado", {}, token),
-        sbFetch("tasks?order=created_at.desc&status=eq.completado", {}, token),
+        // Las tareas completadas sólo se cargan para el admin.
+        isAdminLocal
+          ? sbFetch("tasks?order=created_at.desc&status=eq.completado", {}, token)
+          : Promise.resolve([]),
         sbFetch("settings?id=eq.1", {}, token).catch(() => []),
         sbFetch("operators?order=razon_social.asc", {}, token).catch(() => []),
-      ]);
+      ];
+      const [active, done, sett, ops] = await Promise.all(queries);
       setTasks(active || []);
       setCompleted(done || []);
       setSettings(sett?.[0] || null);
@@ -3742,7 +3936,10 @@ export default function App() {
     return (b.created_at || "").localeCompare(a.created_at || "");
   };
 
-  const source = activeTab === "activas" ? tasks : completed;
+  // Sólo el admin puede ver las completadas. Si un conductor cae aquí
+  // por error con activeTab='completadas', forzamos las activas.
+  const effectiveTab = !isAdmin ? "activas" : activeTab;
+  const source = effectiveTab === "activas" ? tasks : completed;
   const filtered = source
     .filter((t) => filterTruck === "all" || t.truck === filterTruck)
     .filter((t) => filterStatus === "all" || t.status === filterStatus)
@@ -3905,6 +4102,25 @@ export default function App() {
                 🏢
               </button>
             )}
+            {isAdmin && (
+              <button
+                onClick={() => setShowUsers(true)}
+                title="Usuarios y permisos"
+                style={{
+                  background: "#1E2D3D",
+                  border: "none",
+                  color: "#94A3B8",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                }}
+              >
+                👤
+              </button>
+            )}
             <button
               onClick={() => setView("ajustes")}
               title="Ajustes"
@@ -3985,10 +4201,13 @@ export default function App() {
           ))}
         </div>
         <div style={{ display: "flex" }}>
-          {[
-            ["activas", "Activas"],
-            ["completadas", "Completadas"],
-          ].map(([k, l]) => (
+          {(isAdmin
+            ? [
+                ["activas", "Activas"],
+                ["completadas", "Completadas"],
+              ]
+            : [["activas", "Activas"]]
+          ).map(([k, l]) => (
             <button
               key={k}
               onClick={() => setActiveTab(k)}
@@ -4580,6 +4799,13 @@ export default function App() {
           onClose={() => setShowOperators(false)}
           onSave={saveOperator}
           onDelete={deleteOperator}
+        />
+      )}
+      {showUsers && (
+        <UsersListModal
+          token={token}
+          trucks={trucks}
+          onClose={() => setShowUsers(false)}
         />
       )}
       {photoTask && (
