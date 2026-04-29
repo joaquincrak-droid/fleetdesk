@@ -3360,7 +3360,7 @@ export default function App() {
   const [filterTruck, setFilterTruck] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchText, setSearchText] = useState("");
-  const [sortBy, setSortBy] = useState("recientes"); // recientes | hora | cliente
+  const [sortBy, setSortBy] = useState("vencimiento"); // vencimiento | recientes | hora | cliente
   const [view, setView] = useState("tareas"); // tareas | ajustes
   const [settings, setSettings] = useState(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -3807,8 +3807,16 @@ export default function App() {
     if (sortBy === "cliente") {
       return (a.origin_name || a.client || "").localeCompare(b.origin_name || b.client || "");
     }
-    // recientes: por created_at desc (ya vienen así del server, pero por seguridad)
-    return (b.created_at || "").localeCompare(a.created_at || "");
+    if (sortBy === "recientes") {
+      return (b.created_at || "").localeCompare(a.created_at || "");
+    }
+    // Vencimiento: las que tienen fecha más cercana primero. Las
+    // que no tienen fecha se mandan al final. A igualdad de fecha,
+    // ordena por hora.
+    const da = a.transport_date || "9999-12-31";
+    const db = b.transport_date || "9999-12-31";
+    if (da !== db) return da.localeCompare(db);
+    return (a.time || "99:99").localeCompare(b.time || "99:99");
   };
 
   // Sólo el admin puede ver las completadas. Si un conductor cae aquí
@@ -4238,6 +4246,7 @@ export default function App() {
               fontFamily: "inherit",
             }}
           >
+            <option value="vencimiento">Por vencimiento</option>
             <option value="recientes">Recientes</option>
             <option value="hora">Por hora</option>
             <option value="cliente">Por cliente</option>
