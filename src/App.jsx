@@ -3600,6 +3600,7 @@ export default function App() {
         "weight",
         "quantity",
         "order_number",
+        "position",
         "notes",
       ];
       // Campos DAT: solo se mandan si tienen valor, para no romper
@@ -3689,6 +3690,59 @@ export default function App() {
       setError("Error al guardar: " + (e.message || e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Mover una tarea hacia arriba o abajo dentro de su mismo día.
+  // direction: -1 = subir (más prioritaria), +1 = bajar.
+  const moveTask = async (task, direction) => {
+    const dayKey = task.transport_date || null;
+    // Tareas activas del mismo día (excluyendo completadas)
+    const sameDay = tasks
+      .filter((t) => (t.transport_date || null) === dayKey)
+      .sort((a, b) => {
+        const pa = a.position ?? 999999;
+        const pb = b.position ?? 999999;
+        if (pa !== pb) return pa - pb;
+        return (a.time || "99:99").localeCompare(b.time || "99:99");
+      });
+    const idx = sameDay.findIndex((t) => t.id === task.id);
+    const tgt = idx + direction;
+    if (idx < 0 || tgt < 0 || tgt >= sameDay.length) return;
+    // Renumeramos toda la lista (1, 2, 3…) y luego intercambiamos
+    // las dos posiciones afectadas. Actualizamos sólo las que
+    // tengan que cambiar para minimizar peticiones.
+    const newOrder = sameDay.slice();
+    [newOrder[idx], newOrder[tgt]] = [newOrder[tgt], newOrder[idx]];
+    const updates = [];
+    for (let i = 0; i < newOrder.length; i++) {
+      const newPos = i + 1;
+      if (newOrder[i].position !== newPos) {
+        updates.push(
+          sbFetch(
+            `tasks?id=eq.${newOrder[i].id}`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({ position: newPos }),
+              headers: { Prefer: "return=minimal" },
+            },
+            token,
+          ),
+        );
+      }
+    }
+    try {
+      await Promise.all(updates);
+      // Refrescamos la lista localmente sin recargar todo
+      setTasks((prev) =>
+        prev.map((t) => {
+          const inDay = newOrder.findIndex((x) => x.id === t.id);
+          if (inDay === -1) return t;
+          return { ...t, position: inDay + 1 };
+        }),
+      );
+    } catch (e) {
+      setError("No se pudo reordenar: " + e.message);
     }
   };
 
@@ -3812,10 +3866,14 @@ export default function App() {
     }
     // Vencimiento: las que tienen fecha más cercana primero. Las
     // que no tienen fecha se mandan al final. A igualdad de fecha,
-    // ordena por hora.
+    // se respeta el orden manual (campo "position"); a igualdad
+    // también de position, se ordena por hora.
     const da = a.transport_date || "9999-12-31";
     const db = b.transport_date || "9999-12-31";
     if (da !== db) return da.localeCompare(db);
+    const pa = a.position ?? 999999;
+    const pb = b.position ?? 999999;
+    if (pa !== pb) return pa - pb;
     return (a.time || "99:99").localeCompare(b.time || "99:99");
   };
 
@@ -4347,6 +4405,21 @@ export default function App() {
                   >
                     <TypeBadge type={task.type} />
                     <Badge status={task.status} />
+                    {task.position && sortBy === "vencimiento" && (
+                      <span
+                        style={{
+                          background: "rgba(129,140,248,0.18)",
+                          color: "#A5B4FC",
+                          borderRadius: 8,
+                          padding: "2px 7px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                        title="Orden manual del día"
+                      >
+                        #{task.position}
+                      </span>
+                    )}
                     {(task.transport_date || task.time) && (
                       <span
                         style={{
@@ -4404,6 +4477,51 @@ export default function App() {
                   )}
                   {!isCompleted && (
                     <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                      {isAdmin && sortBy === "vencimiento" && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            marginRight: 4,
+                          }}
+                        >
+                          <button
+                            onClick={() => moveTask(task, -1)}
+                            title="Subir orden (más prioritario)"
+                            style={{
+                              padding: "2px 10px",
+                              borderRadius: 8,
+                              border: "1px solid #1E2D3D",
+                              background: "#0D1B2A",
+                              color: "#94A3B8",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              lineHeight: 1,
+                            }}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => moveTask(task, 1)}
+                            title="Bajar orden (menos prioritario)"
+                            style={{
+                              padding: "2px 10px",
+                              borderRadius: 8,
+                              border: "1px solid #1E2D3D",
+                              background: "#0D1B2A",
+                              color: "#94A3B8",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              lineHeight: 1,
+                            }}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      )}
                       <button
                         onClick={() => handleCompleteTask(task)}
                         style={{
