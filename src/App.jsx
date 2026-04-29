@@ -198,6 +198,7 @@ function MiniMap({ lat, lng }) {
   const ref = useRef(null);
   const [ready, setReady] = useState(!!window.L);
   useLeaflet(() => setReady(true));
+  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
   useEffect(() => {
     if (!ready || !ref.current) return;
@@ -210,6 +211,8 @@ function MiniMap({ lat, lng }) {
       touchZoom: false,
       attributionControl: false,
       tap: false,
+      boxZoom: false,
+      keyboard: false,
     }).setView([lat, lng], 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
     const icon = L.divIcon({
@@ -219,8 +222,22 @@ function MiniMap({ lat, lng }) {
       iconSize: [24, 24],
     });
     L.marker([lat, lng], { icon }).addTo(map);
-    return () => map.remove();
-  }, [ready, lat, lng]);
+
+    // Cuando el usuario pulse en el mapa (cualquier parte) lo
+    // tratamos como un click en "Navegar": abre Google Maps con
+    // la ruta. Usamos location.href en lugar de window.open para
+    // que el móvil abra directamente la app de Maps en vez de
+    // bloquearlo como popup.
+    const onClick = () => {
+      window.location.href = navUrl;
+    };
+    map.on("click", onClick);
+
+    return () => {
+      map.off("click", onClick);
+      map.remove();
+    };
+  }, [ready, lat, lng, navUrl]);
 
   return (
     <div
@@ -233,11 +250,24 @@ function MiniMap({ lat, lng }) {
         zIndex: 0,
       }}
     >
-      <div ref={ref} style={{ height: 130, width: "100%" }} />
-      <button
-        onClick={() =>
-          window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank")
-        }
+      {/* Capa transparente clicable: hace de "navegar al sitio"
+          aunque Leaflet no haya capturado el click bien (móviles). */}
+      <a
+        href={navUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: "block",
+          textDecoration: "none",
+          color: "inherit",
+        }}
+      >
+        <div ref={ref} style={{ height: 130, width: "100%", cursor: "pointer" }} />
+      </a>
+      <a
+        href={navUrl}
+        target="_blank"
+        rel="noopener noreferrer"
         style={{
           position: "absolute",
           bottom: 8,
@@ -251,11 +281,12 @@ function MiniMap({ lat, lng }) {
           cursor: "pointer",
           fontSize: 12,
           fontWeight: 700,
+          textDecoration: "none",
           boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
         }}
       >
         🚗 Navegar
-      </button>
+      </a>
     </div>
   );
 }
