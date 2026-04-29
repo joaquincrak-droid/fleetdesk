@@ -1397,10 +1397,11 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                 <div>
                   <label style={labelStyle}>Conductor</label>
                   <select
-                    value={form.truck}
-                    onChange={(e) => set("truck", e.target.value)}
+                    value={form.truck || ""}
+                    onChange={(e) => set("truck", e.target.value || null)}
                     style={inp}
                   >
+                    <option value="">— Sin asignar —</option>
                     {trucks.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.driver}
@@ -3784,7 +3785,11 @@ export default function App() {
   const effectiveTab = !isAdmin ? "activas" : activeTab;
   const source = effectiveTab === "activas" ? tasks : completed;
   const filtered = source
-    .filter((t) => filterTruck === "all" || t.truck === filterTruck)
+    .filter((t) => {
+      if (filterTruck === "all") return true;
+      if (filterTruck === "__unassigned") return !t.truck;
+      return t.truck === filterTruck;
+    })
     .filter((t) => filterStatus === "all" || t.status === filterStatus)
     .filter(matchSearch)
     .sort(sortFn);
@@ -4180,6 +4185,7 @@ export default function App() {
             }}
           >
             <option value="all">Todos los conductores</option>
+            <option value="__unassigned">Sin asignar</option>
             {trucks.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.driver}
@@ -4339,8 +4345,12 @@ export default function App() {
                       marginBottom: 4,
                     }}
                   >
-                    {truck && (
+                    {truck ? (
                       <span style={{ color: "#475569", fontSize: 12 }}>🚛 {truck.driver}</span>
+                    ) : (
+                      <span style={{ color: "#F59E0B", fontSize: 12, fontWeight: 600 }}>
+                        🚛 Sin asignar
+                      </span>
                     )}
                     {task.weight && (
                       <span style={{ color: "#475569", fontSize: 12 }}>⚖️ {task.weight}</span>
