@@ -1975,7 +1975,19 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     <input
                       type="date"
                       value={form.transport_date || ""}
-                      onChange={(e) => set("transport_date", e.target.value)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        // Al cambiar la fecha de transporte, las fechas
+                        // de inicio y fin del traslado del DIR se
+                        // copian automáticamente para no tener que
+                        // teclearlas tres veces.
+                        setForm((f) => ({
+                          ...f,
+                          transport_date: v,
+                          start_date: v,
+                          end_date: v,
+                        }));
+                      }}
                       style={inp}
                     />
                   </div>
