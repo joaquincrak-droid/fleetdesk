@@ -1228,217 +1228,8 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ── Autocompletado de direcciones (Google Places + fallback OSM) ──
-// Si hay clave de Google, usa Places Autocomplete + Place Details.
-// Si no, cae a Nominatim (OpenStreetMap) que es gratis sin clave.
-function AddressAutocomplete({
-  value,
-  onChange,
-  onSelect,
-  apiKey,
-  placeholder,
-  style,
-  disabled = false,
-}) {
-  const [suggestions, setSuggestions] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const debounceRef = useRef(null);
-
-  const fetchGoogle = async (q) => {
-    const url =
-      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
-      `?input=${encodeURIComponent(q)}&language=es&components=country:es&key=${apiKey}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    if (d.status !== "OK" && d.status !== "ZERO_RESULTS") {
-      throw new Error(d.error_message || d.status);
-    }
-    return (d.predictions || []).map((p) => ({
-      id: p.place_id,
-      main: p.structured_formatting?.main_text || p.description,
-      secondary: p.structured_formatting?.secondary_text || "",
-      description: p.description,
-      _source: "google",
-    }));
-  };
-
-  const fetchOsm = async (q) => {
-    const url =
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}` +
-      `&format=json&limit=6&countrycodes=es&addressdetails=1`;
-    const r = await fetch(url, { headers: { "Accept-Language": "es" } });
-    const d = await r.json();
-    return (d || []).map((p, i) => ({
-      id: p.place_id || `${p.osm_id}-${i}`,
-      main:
-        p.address?.road
-          ? `${p.address.road}${p.address.house_number ? ", " + p.address.house_number : ""}`
-          : p.display_name.split(",")[0],
-      secondary: p.display_name.split(",").slice(1).join(",").trim(),
-      description: p.display_name,
-      lat: parseFloat(p.lat),
-      lng: parseFloat(p.lon),
-      address: p.address || {},
-      _source: "osm",
-    }));
-  };
-
-  const fetchSuggestions = async (q) => {
-    if (!q || q.length < 3) {
-      setSuggestions([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const list = apiKey ? await fetchGoogle(q) : await fetchOsm(q);
-      setSuggestions(list);
-      setOpen(true);
-    } catch (e) {
-      console.error("Autocomplete error:", e.message);
-      setSuggestions([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleChange = (val) => {
-    onChange(val);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(val), 350);
-  };
-
-  const handlePick = async (s) => {
-    setOpen(false);
-    setSuggestions([]);
-    if (s._source === "osm") {
-      const addr = s.address || {};
-      onSelect({
-        address: s.description,
-        lat: s.lat,
-        lng: s.lng,
-        cp: addr.postcode || "",
-        municipio: addr.city || addr.town || addr.village || addr.municipality || "",
-        provincia: addr.state || addr.county || "",
-      });
-      return;
-    }
-    // Google: traer detalles para sacar lat/lng + componentes
-    try {
-      const url =
-        `https://maps.googleapis.com/maps/api/place/details/json` +
-        `?place_id=${s.id}&language=es` +
-        `&fields=formatted_address,geometry/location,address_components` +
-        `&key=${apiKey}`;
-      const r = await fetch(url);
-      const d = await r.json();
-      const res = d.result || {};
-      const comps = res.address_components || [];
-      const find = (...types) => {
-        for (const t of types) {
-          const c = comps.find((x) => x.types?.includes(t));
-          if (c) return c.long_name;
-        }
-        return "";
-      };
-      onSelect({
-        address: res.formatted_address || s.description,
-        lat: res.geometry?.location?.lat ?? null,
-        lng: res.geometry?.location?.lng ?? null,
-        cp: find("postal_code"),
-        municipio: find("locality", "administrative_area_level_3"),
-        provincia: find("administrative_area_level_2", "administrative_area_level_1"),
-      });
-    } catch (e) {
-      console.error("Place details error:", e);
-      onSelect({ address: s.description });
-    }
-  };
-
-  return (
-    <div style={{ position: "relative" }}>
-      <input
-        value={value || ""}
-        onChange={(e) => handleChange(e.target.value)}
-        onFocus={() => suggestions.length && setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-        placeholder={placeholder}
-        disabled={disabled}
-        style={style}
-      />
-      {loading && (
-        <div
-          style={{
-            position: "absolute",
-            right: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            color: "#64748B",
-            fontSize: 11,
-          }}
-        >
-          ⌛
-        </div>
-      )}
-      {open && suggestions.length > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            zIndex: 1000,
-            background: "#0D1B2A",
-            border: "1px solid #1E2D3D",
-            borderRadius: 10,
-            marginTop: 4,
-            maxHeight: 260,
-            overflowY: "auto",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-          }}
-        >
-          {suggestions.map((s, i) => (
-            <div
-              key={s.id || i}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handlePick(s)}
-              style={{
-                padding: "10px 12px",
-                cursor: "pointer",
-                borderBottom: i < suggestions.length - 1 ? "1px solid #1E2D3D" : "none",
-                color: "#E2E8F0",
-                fontSize: 13,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#13243A")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            >
-              <div style={{ fontWeight: 600 }}>{s.main}</div>
-              {s.secondary && (
-                <div style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
-                  {s.secondary}
-                </div>
-              )}
-            </div>
-          ))}
-          <div
-            style={{
-              padding: "6px 10px",
-              fontSize: 10,
-              color: "#475569",
-              textAlign: "right",
-              borderTop: "1px solid #1E2D3D",
-            }}
-          >
-            {apiKey ? "Powered by Google" : "OpenStreetMap"}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Task Modal ────────────────────────────────────────────────
-function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, operators = [], onSaveOperator, onNextDi, googleApiKey = "" }) {
+function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, operators = [], onSaveOperator, onNextDi }) {
   const [form, setForm] = useState(
     task || {
       // Los conductores sólo pueden crear recogidas en su propio camión.
@@ -3363,7 +3154,6 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
     email: settings?.email || "",
     nima: settings?.nima || "",
     autorizacion: settings?.autorizacion || "",
-    google_api_key: settings?.google_api_key || "",
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const [saved, setSaved] = useState(false);
@@ -3467,27 +3257,6 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
               placeholder="T-000XXX"
               disabled={!isAdmin}
             />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 6, paddingTop: 12, borderTop: "1px dashed #1E2D3D" }}>
-          <label style={labelStyle}>
-            Clave API de Google Maps (autocompletado de direcciones)
-          </label>
-          <input
-            value={form.google_api_key}
-            onChange={(e) => set("google_api_key", e.target.value)}
-            style={inp}
-            placeholder="AIzaSy..."
-            disabled={!isAdmin}
-          />
-          <div style={{ fontSize: 11, color: "#64748B", marginTop: 4, lineHeight: 1.4 }}>
-            Pega aquí la clave que generes en Google Cloud Console (APIs y servicios →
-            Credenciales). Activa <strong>Places API</strong> y <strong>Geocoding API</strong>,
-            y restringe la clave por dominio (HTTP referrer) a{" "}
-            <code style={{ color: "#94A3B8" }}>fleetdesk-pied.vercel.app/*</code> para
-            evitar uso indebido. Si la dejas vacía, la búsqueda en mapa cae al servicio gratis
-            de OpenStreetMap.
           </div>
         </div>
 
@@ -3667,11 +3436,13 @@ export default function App() {
       const isAdminLocal = role === "admin";
       const queries = [
         sbFetch("tasks?order=created_at.desc&status=neq.completado", {}, token),
-        // Las tareas completadas sólo se cargan para el admin.
+        // Las tareas completadas y los settings sólo los carga el admin.
         isAdminLocal
           ? sbFetch("tasks?order=created_at.desc&status=eq.completado", {}, token)
           : Promise.resolve([]),
-        sbFetch("settings?id=eq.1", {}, token).catch(() => []),
+        isAdminLocal
+          ? sbFetch("settings?id=eq.1", {}, token).catch(() => [])
+          : Promise.resolve([]),
         sbFetch("operators?order=razon_social.asc", {}, token).catch(() => []),
       ];
       const [active, done, sett, ops] = await Promise.all(queries);
@@ -3698,7 +3469,6 @@ export default function App() {
         "email",
         "nima",
         "autorizacion",
-        "google_api_key",
       ];
       const clean = {};
       for (const k of ALLOWED) clean[k] = data[k] ?? null;
@@ -4860,7 +4630,6 @@ export default function App() {
           operators={operators}
           onSaveOperator={saveOperator}
           onNextDi={nextDiNumber}
-          googleApiKey={settings?.google_api_key || ""}
         />
       )}
       {deleteId && (
