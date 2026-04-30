@@ -4013,6 +4013,23 @@ export default function App() {
           console.warn("No se pudo notificar al admin:", e.message),
         );
       }
+      // Envío automático del DIR al completar una recogida de
+      // residuos: cliente productor + RECIPALETS + chófer (BCC).
+      // Sólo si la tarea tiene origin_email; si no, se ignora
+      // silenciosamente (la app no se rompe).
+      if (
+        completedTask &&
+        completedTask.type === "recogida" &&
+        completedTask.subtype !== "palets" &&
+        completedTask.origin_email
+      ) {
+        const truck = trucks.find((t) => t.id === completedTask.truck) || null;
+        sendDirEmail(completedTask, settings, truck, token)
+          .then(() => console.info("DIR enviado automáticamente al completar."))
+          .catch((e) =>
+            setError("No se pudo enviar el DIR automáticamente: " + e.message),
+          );
+      }
     } catch {
       setError("Error al actualizar.");
     }
