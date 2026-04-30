@@ -64,11 +64,11 @@ const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
 
 // Camiones de la flota. La matrícula aparece en el PDF del albarán
-// y en el cuerpo del correo. Si cambias un camión actualiza aquí
-// el campo "plate".
+// y en el cuerpo del correo. El color se usa para distinguir a cada
+// chófer visualmente en la lista de tareas.
 const trucks = [
-  { id: "T-01", name: "Camión 1", driver: "Miguel", plate: "9390MMC" },
-  { id: "T-02", name: "Camión 2", driver: "Juan",   plate: "6598MRY" },
+  { id: "T-01", name: "Camión 1", driver: "Miguel", plate: "9390MMC", color: "#38BDF8" },
+  { id: "T-02", name: "Camión 2", driver: "Juan",   plate: "6598MRY", color: "#F59E0B" },
 ];
 
 const STATUS_CONFIG = {
@@ -4607,6 +4607,7 @@ export default function App() {
           const renderTaskCard = (task) => {
             const truck = trucks.find((t) => t.id === task.truck);
             const isCompleted = task.status === "completado";
+            const truckColor = truck?.color || "#475569";
             return (
               <div
                 key={task.id}
@@ -4617,6 +4618,7 @@ export default function App() {
                       ? "#1E2D3D"
                       : (TYPE_CONFIG[task.type]?.color + "40") || "#1E2D3D"
                   }`,
+                  borderLeft: `5px solid ${isCompleted ? "#1E2D3D" : truckColor}`,
                   borderRadius: 16,
                   overflow: "hidden",
                   opacity: isCompleted ? 0.75 : 1,
@@ -4696,7 +4698,15 @@ export default function App() {
                     }}
                   >
                     {truck ? (
-                      <span style={{ color: "#475569", fontSize: 12 }}>🚛 {truck.driver}</span>
+                      <span
+                        style={{
+                          color: truck.color || "#475569",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        🚛 {truck.driver}
+                      </span>
                     ) : (
                       <span style={{ color: "#F59E0B", fontSize: 12, fontWeight: 600 }}>
                         🚛 Sin asignar
@@ -5060,10 +5070,12 @@ export default function App() {
                         style={{
                           fontSize: 12,
                           fontWeight: 700,
-                          color: "#818CF8",
+                          color: tr.color || "#818CF8",
                           textTransform: "uppercase",
                           letterSpacing: "0.06em",
                           marginBottom: 8,
+                          paddingLeft: 8,
+                          borderLeft: `4px solid ${tr.color || "#818CF8"}`,
                         }}
                       >
                         🚛 {tr.driver} ({tr.plate || tr.id}) · {items.length}
