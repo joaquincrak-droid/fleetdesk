@@ -3835,14 +3835,13 @@ export default function App() {
     }
   };
 
-  // Mover una tarea hacia arriba o abajo dentro de su mismo día.
-  // El orden es independiente por chófer: Miguel y Juan tienen sus
-  // propios #1, #2, #3 sin pisarse.
-  // direction: -1 = subir (más prioritaria), +1 = bajar.
+  // Mover una tarea hacia arriba o abajo dentro de su mismo grupo.
+  // Grupo = mismo chófer + mismo día. Si la tarea no tiene fecha,
+  // se reordena con todas las del mismo chófer sin fecha.
+  // direction: -1 = subir, +1 = bajar.
   const moveTask = async (task, direction) => {
     const dayKey = task.transport_date || null;
     const truckKey = task.truck || null;
-    // Tareas activas del mismo día Y del mismo chófer
     const sameDay = tasks
       .filter(
         (t) =>
@@ -3857,7 +3856,21 @@ export default function App() {
       });
     const idx = sameDay.findIndex((t) => t.id === task.id);
     const tgt = idx + direction;
-    if (idx < 0 || tgt < 0 || tgt >= sameDay.length) return;
+    if (idx < 0) return;
+    if (tgt < 0 || tgt >= sameDay.length) {
+      // No hay otra tarea del mismo chófer + día con la que
+      // intercambiar. Avisamos al admin para que entienda por qué
+      // no se mueve nada.
+      const motivo =
+        sameDay.length <= 1
+          ? "no hay otras tareas del mismo chófer y día"
+          : direction < 0
+          ? "ya está la primera del día"
+          : "ya está la última del día";
+      setError(`No se puede reordenar: ${motivo}.`);
+      setTimeout(() => setError(null), 3500);
+      return;
+    }
     // Renumeramos toda la lista (1, 2, 3…) y luego intercambiamos
     // las dos posiciones afectadas. Actualizamos sólo las que
     // tengan que cambiar para minimizar peticiones.
