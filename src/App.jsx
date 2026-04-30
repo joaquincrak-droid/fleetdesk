@@ -3910,17 +3910,54 @@ export default function App() {
 
   const markComplete = async (id) => {
     try {
+      const completedTask = tasks.find((t) => t.id === id);
       await sbFetch(
         `tasks?id=eq.${id}`,
         {
           method: "PATCH",
-          body: JSON.stringify({ status: "completado" }),
+          body: JSON.stringify({ status: "completado", position: null }),
           headers: { Prefer: "return=minimal" },
         },
         token
       );
-      // Buscamos la tarea (en local) para tener los datos del cliente
-      const completedTask = tasks.find((t) => t.id === id);
+      // Renumeramos las tareas activas que quedan en el mismo
+      // grupo (mismo chófer + mismo día) para que el orden vuelva
+      // a empezar en 1, 2, 3… sin huecos.
+      if (completedTask) {
+        const dayKey = completedTask.transport_date || null;
+        const truckKey = completedTask.truck || null;
+        const remaining = tasks
+          .filter(
+            (t) =>
+              t.id !== id &&
+              (t.transport_date || null) === dayKey &&
+              (t.truck || null) === truckKey,
+          )
+          .sort((a, b) => {
+            const pa = a.position ?? 999999;
+            const pb = b.position ?? 999999;
+            if (pa !== pb) return pa - pb;
+            return (a.time || "99:99").localeCompare(b.time || "99:99");
+          });
+        const updates = [];
+        for (let i = 0; i < remaining.length; i++) {
+          const newPos = i + 1;
+          if (remaining[i].position !== newPos) {
+            updates.push(
+              sbFetch(
+                `tasks?id=eq.${remaining[i].id}`,
+                {
+                  method: "PATCH",
+                  body: JSON.stringify({ position: newPos }),
+                  headers: { Prefer: "return=minimal" },
+                },
+                token,
+              ).catch((e) => console.warn("Renumber error:", e.message)),
+            );
+          }
+        }
+        if (updates.length) await Promise.all(updates);
+      }
       await loadData();
       // Notificamos a los administradores (sin esperar — si falla
       // no rompe nada). Sólo lo hace si quien completa NO es admin
