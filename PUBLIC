@@ -1,0 +1,56 @@
+// ──────────────────────────────────────────────────────────────
+// Service Worker de FleetDesk — gestiona las notificaciones push
+// ──────────────────────────────────────────────────────────────
+// Este archivo lo registra la app al arrancar (App.jsx). Se queda
+// vivo en segundo plano (incluso con la app cerrada) escuchando
+// eventos de "push" del navegador. Cuando llega uno, muestra una
+// notificación nativa al usuario; al pulsarla, abre la app.
+// ──────────────────────────────────────────────────────────────
+
+self.addEventListener("install", (event) => {
+  // Activa esta versión del SW inmediatamente sin esperar a que
+  // se cierren todas las pestañas del usuario.
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "FleetDesk", body: event.data ? event.data.text() : "Nueva tarea" };
+  }
+  const title = data.title || "FleetDesk";
+  const options = {
+    body: data.body || "Tienes una nueva tarea asignada.",
+    icon: "/icon-192.png",   // si no existe usa el favicon
+    badge: "/icon-192.png",
+    data: { url: data.url || "/" },
+    vibrate: [120, 60, 120],
+    tag: data.tag || "fleetdesk-task",
+    requireInteraction: false,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      // Si la app ya está abierta, focalízala
+      for (const w of wins) {
+        if ("focus" in w) {
+          w.navigate(url).catch(() => {});
+          return w.focus();
+        }
+      }
+      // Si no, ábrela
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    }),
+  );
+});
