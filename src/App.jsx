@@ -3488,6 +3488,15 @@ export default function App() {
     return () => window.removeEventListener("fleet:token-refreshed", handler);
   }, []);
 
+  // Al cambiar de pestaña entre Activas y Completadas, ajustamos
+  // automáticamente el orden por defecto: las activas se ordenan
+  // por vencimiento (más cercano primero) y las completadas por
+  // recientes (la última en completarse primero).
+  useEffect(() => {
+    if (activeTab === "completadas") setSortBy("recientes");
+    else setSortBy("vencimiento");
+  }, [activeTab]);
+
   // Estado de las notificaciones push del navegador.
   const [pushStatus, setPushStatus] = useState(
     typeof Notification !== "undefined" ? Notification.permission : "unsupported",
