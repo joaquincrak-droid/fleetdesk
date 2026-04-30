@@ -3836,12 +3836,19 @@ export default function App() {
   };
 
   // Mover una tarea hacia arriba o abajo dentro de su mismo día.
+  // El orden es independiente por chófer: Miguel y Juan tienen sus
+  // propios #1, #2, #3 sin pisarse.
   // direction: -1 = subir (más prioritaria), +1 = bajar.
   const moveTask = async (task, direction) => {
     const dayKey = task.transport_date || null;
-    // Tareas activas del mismo día (excluyendo completadas)
+    const truckKey = task.truck || null;
+    // Tareas activas del mismo día Y del mismo chófer
     const sameDay = tasks
-      .filter((t) => (t.transport_date || null) === dayKey)
+      .filter(
+        (t) =>
+          (t.transport_date || null) === dayKey &&
+          (t.truck || null) === truckKey,
+      )
       .sort((a, b) => {
         const pa = a.position ?? 999999;
         const pb = b.position ?? 999999;
@@ -4596,8 +4603,8 @@ export default function App() {
           </div>
         )}
 
-        <div style={{ display: "grid", gap: 12 }}>
-          {filtered.map((task) => {
+        {(() => {
+          const renderTaskCard = (task) => {
             const truck = trucks.find((t) => t.id === task.truck);
             const isCompleted = task.status === "completado";
             return (
@@ -4998,8 +5005,101 @@ export default function App() {
                 </div>
               </div>
             );
-          })}
-        </div>
+          };
+
+          // Modo "columnas por chófer": cuando el admin ordena por
+          // vencimiento sin filtro de camión, divide la lista en
+          // Sin asignar + una columna por chófer para reordenar
+          // los #1, #2, #3 independientemente para cada uno.
+          const splitMode =
+            isAdmin &&
+            sortBy === "vencimiento" &&
+            filterTruck === "all" &&
+            effectiveTab === "activas";
+
+          if (splitMode) {
+            const unassigned = filtered.filter((t) => !t.truck);
+            const byTruck = trucks.map((t) => ({
+              truck: t,
+              items: filtered.filter((x) => x.truck === t.id),
+            }));
+            return (
+              <div style={{ display: "grid", gap: 16 }}>
+                {unassigned.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#F59E0B",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: 8,
+                      }}
+                    >
+                      🚛 Sin asignar · {unassigned.length}
+                    </div>
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {unassigned.map((t) => renderTaskCard(t))}
+                    </div>
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 16,
+                  }}
+                >
+                  {byTruck.map(({ truck: tr, items }) => (
+                    <div
+                      key={tr.id}
+                      style={{ flex: "1 1 280px", minWidth: 0 }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#818CF8",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          marginBottom: 8,
+                        }}
+                      >
+                        🚛 {tr.driver} ({tr.plate || tr.id}) · {items.length}
+                      </div>
+                      {items.length === 0 ? (
+                        <div
+                          style={{
+                            padding: "24px 12px",
+                            textAlign: "center",
+                            color: "#334155",
+                            fontSize: 13,
+                            border: "1px dashed #1E2D3D",
+                            borderRadius: 12,
+                          }}
+                        >
+                          Sin tareas asignadas
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 12 }}>
+                          {items.map((t) => renderTaskCard(t))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          // Modo lista normal (una sola columna)
+          return (
+            <div style={{ display: "grid", gap: 12 }}>
+              {filtered.map((t) => renderTaskCard(t))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* FAB: admin siempre, conductor sólo si tiene camión asignado */}
