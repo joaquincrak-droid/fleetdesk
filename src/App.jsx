@@ -65,10 +65,12 @@ const SUPABASE_KEY =
 
 // Camiones de la flota. La matrícula aparece en el PDF del albarán
 // y en el cuerpo del correo. El color se usa para distinguir a cada
-// chófer visualmente en la lista de tareas.
+// chófer visualmente en la lista de tareas. El "email" recibe una
+// copia oculta (BCC) del DIR cuando la tarea está asignada a su
+// camión, para que el conductor también tenga el documento.
 const trucks = [
-  { id: "T-01", name: "Camión 1", driver: "Miguel", plate: "9390MMC", color: "#38BDF8" },
-  { id: "T-02", name: "Camión 2", driver: "Juan",   plate: "6598MRY", color: "#F59E0B" },
+  { id: "T-01", name: "Camión 1", driver: "Miguel", plate: "9390MMC", color: "#38BDF8", email: "miguel.jcpalets@gmail.com" },
+  { id: "T-02", name: "Camión 2", driver: "Juan",   plate: "6598MRY", color: "#F59E0B", email: "" },
 ];
 
 const STATUS_CONFIG = {
@@ -1175,6 +1177,9 @@ async function sendDirEmail(task, settings, truck, accessToken) {
     },
   ];
 
+  // Si el camión asignado tiene email definido, le mandamos copia
+  // oculta (BCC) — útil para que el conductor reciba también el DIR.
+  const driverEmail = (truck?.email || "").trim();
   const res = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
     method: "POST",
     headers: {
@@ -1185,6 +1190,7 @@ async function sendDirEmail(task, settings, truck, accessToken) {
     body: JSON.stringify({
       to: dest,
       cc: "recipalets@jcpalets.com",
+      bcc: driverEmail || undefined,
       subject,
       bodyHtml,
       attachments,
