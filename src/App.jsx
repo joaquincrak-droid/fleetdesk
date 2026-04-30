@@ -5085,25 +5085,6 @@ export default function App() {
             }));
             return (
               <div style={{ display: "grid", gap: 16 }}>
-                {unassigned.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#F59E0B",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                        marginBottom: 8,
-                      }}
-                    >
-                      🚛 Sin asignar · {unassigned.length}
-                    </div>
-                    <div style={{ display: "grid", gap: 12 }}>
-                      {unassigned.map((t) => renderTaskCard(t))}
-                    </div>
-                  </div>
-                )}
                 <div
                   style={{
                     display: "flex",
@@ -5151,6 +5132,27 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+                {unassigned.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#F59E0B",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: 8,
+                        paddingLeft: 8,
+                        borderLeft: "4px solid #F59E0B",
+                      }}
+                    >
+                      🚛 Sin asignar · {unassigned.length}
+                    </div>
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {unassigned.map((t) => renderTaskCard(t))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           }
