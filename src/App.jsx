@@ -3899,10 +3899,65 @@ export default function App() {
         },
         token
       );
+      // Buscamos la tarea (en local) para tener los datos del cliente
+      const completedTask = tasks.find((t) => t.id === id);
       await loadData();
+      // Notificamos a los administradores (sin esperar — si falla
+      // no rompe nada). Sólo lo hace si quien completa NO es admin
+      // (no tiene sentido que el admin se notifique a sí mismo).
+      if (!isAdmin && completedTask) {
+        notifyAdminsTaskCompleted(completedTask).catch((e) =>
+          console.warn("No se pudo notificar al admin:", e.message),
+        );
+      }
     } catch {
       setError("Error al actualizar.");
     }
+  };
+
+  // Manda una push a TODOS los administradores avisándoles de
+  // que el chófer ha completado una tarea.
+  const notifyAdminsTaskCompleted = async (task) => {
+    const admins = await sbFetch(
+      "profiles?role=eq.admin&select=id",
+      {},
+      token,
+    ).catch(() => []);
+    if (!admins?.length) return;
+    const cliente = task.origin_name || task.client || "Sin cliente";
+    const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
+    const subt =
+      task.type === "recogida"
+        ? task.subtype === "palets"
+          ? " de palets"
+          : " de residuos"
+        : "";
+    const truckInfo = trucks.find((t) => t.id === task.truck);
+    const conductor = truckInfo?.driver || "Un conductor";
+    const title = `✅ Tarea completada por ${conductor}`;
+    const body =
+      `${tipo}${subt} · ${cliente}` +
+      (task.transport_date ? ` · ${fmtDate(task.transport_date)}` : "");
+    // Una llamada por admin (la edge function busca todas las
+    // suscripciones de cada usuario y manda a cada dispositivo).
+    await Promise.all(
+      admins.map((a) =>
+        fetch(`${SUPABASE_URL}/functions/v1/notify-push`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${token || SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            driverId: a.id,        // reutilizamos el campo: aquí es el id del admin
+            title,
+            body,
+            url: "/",
+          }),
+        }),
+      ),
+    );
   };
 
   // Atajo: abre la cámara para escanear el albarán cuando es entrega
