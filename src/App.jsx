@@ -1,6 +1,65 @@
 import { useState, useEffect, useRef } from "react";
 
 const SUPABASE_URL = "https://jfzyueilhrbzkvllyjfd.supabase.co";
+
+// Clave pública VAPID — generada una vez con node + crypto, se
+// puede compartir libremente (la privada vive sólo en Supabase).
+const VAPID_PUBLIC_KEY =
+  "BJm2Z-rk0dyni6MYKsH4gWZQdglsS0UMJhxIQbgk3lZ9x1mAvSLEmezxjLwHMOkLajlDkYcWCmIzjfuqxty7K_Q";
+
+// Convierte la clave VAPID base64url a Uint8Array (lo que pide
+// pushManager.subscribe).
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+// Registra el service worker, pide permiso al usuario y guarda
+// la suscripción en Supabase (idempotente).
+async function enablePushNotifications(token, userId) {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("Tu navegador no soporta notificaciones push.");
+  }
+  if (Notification.permission === "denied") {
+    throw new Error("Has bloqueado las notificaciones para esta web. Actívalas desde los ajustes del navegador.");
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  if (Notification.permission !== "granted") {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("Permiso denegado.");
+  }
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+  const json = sub.toJSON();
+  await sbFetch(
+    "push_subscriptions",
+    {
+      method: "POST",
+      headers: {
+        Prefer: "return=minimal,resolution=merge-duplicates",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        endpoint: json.endpoint,
+        p256dh: json.keys?.p256dh,
+        auth: json.keys?.auth,
+        user_agent: navigator.userAgent.slice(0, 200),
+      }),
+    },
+    token,
+  );
+  return true;
+}
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
 
@@ -3429,6 +3488,22 @@ export default function App() {
     return () => window.removeEventListener("fleet:token-refreshed", handler);
   }, []);
 
+  // Estado de las notificaciones push del navegador.
+  const [pushStatus, setPushStatus] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported",
+  );
+  const handleEnablePush = async () => {
+    if (!user?.id || !token) return;
+    try {
+      await enablePushNotifications(token, user.id);
+      setPushStatus("granted");
+      alert("Notificaciones activadas en este dispositivo. Recibirás un aviso cuando se te asigne una nueva tarea.");
+    } catch (e) {
+      setPushStatus(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+      alert("No se pudieron activar: " + e.message);
+    }
+  };
+
   const handleLogin = async (accessToken, userData, refreshToken = null) => {
     setLoading(true);
     try {
@@ -3669,6 +3744,11 @@ export default function App() {
       }
 
       const { id } = form;
+      // Antes de guardar, recordamos el truck anterior (si existe)
+      // para detectar cambios de asignación y notificar al chófer.
+      const previousTruck = id
+        ? (tasks.find((t) => t.id === id) || {}).truck || null
+        : null;
       if (id) {
         await sbFetch(
           `tasks?id=eq.${id}`,
@@ -3686,10 +3766,72 @@ export default function App() {
       }
       setModal(null);
       await loadData();
+      // Notificar al chófer si la tarea es nueva con camión, o si
+      // se le ha cambiado el camión a un chófer distinto. No
+      // bloquea el guardado si el correo falla.
+      const newTruck = clean.truck || null;
+      const shouldNotify =
+        newTruck && (!id || newTruck !== previousTruck);
+      if (shouldNotify) {
+        notifyDriverOfTask({ ...clean, id }).catch((e) =>
+          console.warn("No se pudo notificar al chófer:", e.message),
+        );
+      }
     } catch (e) {
       setError("Error al guardar: " + (e.message || e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Manda una notificación push (Web Push API) al chófer cuyo
+  // camión coincide con task.truck. Usa la edge function
+  // notify-push, que a su vez busca las suscripciones del
+  // chófer en push_subscriptions y se las manda.
+  const notifyDriverOfTask = async (task) => {
+    if (!task.truck) return;
+    // Buscamos el user_id del chófer por su truck_id
+    const profiles = await sbFetch(
+      `profiles?truck_id=eq.${encodeURIComponent(task.truck)}` +
+        `&role=eq.conductor&select=id`,
+      {},
+      token,
+    ).catch(() => []);
+    const driverId = profiles?.[0]?.id;
+    if (!driverId) return;
+    const cliente = task.origin_name || task.client || "Sin cliente";
+    const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
+    const subt =
+      task.type === "recogida"
+        ? task.subtype === "palets"
+          ? " de palets"
+          : " de residuos"
+        : "";
+    const fecha = task.transport_date ? fmtDate(task.transport_date) : "";
+    const hora = task.time || "";
+    const title = `📋 Nueva ${tipo.toLowerCase()}${subt}`;
+    const body =
+      `${cliente}` +
+      (fecha ? ` · ${fecha}` : "") +
+      (hora ? ` ${hora}` : "") +
+      (task.address ? `\n${task.address}` : "");
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/notify-push`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${token || SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        driverId,
+        title,
+        body,
+        url: "/",
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt);
     }
   };
 
@@ -4083,6 +4225,25 @@ export default function App() {
                 }}
               >
                 ⚙️
+              </button>
+            )}
+            {pushStatus !== "granted" && pushStatus !== "unsupported" && (
+              <button
+                onClick={handleEnablePush}
+                title="Activar notificaciones"
+                style={{
+                  background: "rgba(245,158,11,0.15)",
+                  border: "1px solid #F59E0B",
+                  color: "#F59E0B",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                }}
+              >
+                🔔
               </button>
             )}
             <button
