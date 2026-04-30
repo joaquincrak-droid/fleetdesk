@@ -3478,6 +3478,33 @@ export default function App() {
     if (token && role) loadData();
   }, [token, role]);
 
+  // Auto-refresco silencioso para que todos los dispositivos
+  // vean al instante las tareas creadas/completadas en cualquier
+  // otro. Refrescamos cada 20 s SOLO si la pestaña está visible
+  // (no quema batería en segundo plano), y también nada más
+  // volver a la app desde otra pestaña/aplicación.
+  useEffect(() => {
+    if (!token || !role) return;
+    let cancelled = false;
+    const refresh = () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      loadData(true);
+    };
+    const interval = setInterval(refresh, 20000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [token, role]);
+
   // Cuando sbFetch refresca el token automáticamente, sincronizamos
   // el estado de React para que las próximas llamadas usen el nuevo.
   useEffect(() => {
@@ -3545,8 +3572,10 @@ export default function App() {
     localStorage.clear();
   };
 
-  const loadData = async () => {
-    setLoading(true);
+  // silent=true → no muestra el spinner de "Cargando…", para usar
+  // en el polling de fondo y no parpadear la pantalla cada 20 s.
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const isAdminLocal = role === "admin";
@@ -3567,9 +3596,11 @@ export default function App() {
       setSettings(sett?.[0] || null);
       setOperators(ops || []);
     } catch (e) {
-      setError("Error al cargar. Comprueba tu conexión.");
+      // En modo silencioso (polling) no molestamos al usuario con
+      // un mensaje rojo cada vez que la conexión falla un instante.
+      if (!silent) setError("Error al cargar. Comprueba tu conexión.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
