@@ -3965,6 +3965,20 @@ export default function App() {
   // aceptar la foto. Para recogidas de residuos no hace falta foto
   // (ya tienen el DIR), así que cae al markComplete normal.
   const handleCompleteTask = (task) => {
+    // En recogidas de RESIDUOS exigimos que esté rellena la cantidad
+    // (kg netos) antes de poder completarla — es un campo obligatorio
+    // del DIR.
+    const isResiduos =
+      task.type === "recogida" && task.subtype !== "palets";
+    if (isResiduos) {
+      const q = (task.quantity || "").toString().trim();
+      if (!q) {
+        alert(
+          "Antes de completar esta recogida tienes que rellenar la cantidad (kg netos). Edita la tarea con el lápiz, mete los kilos y vuelve a intentarlo.",
+        );
+        return;
+      }
+    }
     const needsPhoto =
       task.type === "entrega" ||
       (task.type === "recogida" && task.subtype === "palets");
@@ -4804,7 +4818,14 @@ export default function App() {
                             );
                             return;
                           }
-                          if (!confirm(`Enviar DIR a ${task.origin_email}?`)) return;
+                          const cli = task.origin_name || task.client || "el cliente";
+                          const di = task.di_number || "(sin nº DI)";
+                          const ok = confirm(
+                            `¿Enviar el DIR ${di} de ${cli} a ${task.origin_email}?\n\n` +
+                            `Se mandará una copia a recipalets@jcpalets.com.\n\n` +
+                            `Comprueba que los datos del DIR son correctos antes de enviarlo.`
+                          );
+                          if (!ok) return;
                           try {
                             const r = await sendDirEmail(
                               task,
@@ -4913,8 +4934,14 @@ export default function App() {
                             );
                             return;
                           }
-                          if (!confirm(`Enviar DIR a ${task.origin_email} (con copia a RECIPALETS)?`))
-                            return;
+                          const cli = task.origin_name || task.client || "el cliente";
+                          const di = task.di_number || "(sin nº DI)";
+                          const ok = confirm(
+                            `¿Enviar el DIR ${di} de ${cli} a ${task.origin_email}?\n\n` +
+                            `Se mandará una copia a recipalets@jcpalets.com.\n\n` +
+                            `Comprueba que los datos del DIR son correctos antes de enviarlo.`
+                          );
+                          if (!ok) return;
                           try {
                             const r = await sendDirEmail(
                               task,
