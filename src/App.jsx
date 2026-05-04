@@ -3954,9 +3954,9 @@ export default function App() {
     }
   };
 
-  const markComplete = async (id) => {
+  const markComplete = async (id, taskOverride = null) => {
     try {
-      const completedTask = tasks.find((t) => t.id === id);
+      const completedTask = taskOverride || tasks.find((t) => t.id === id);
       await sbFetch(
         `tasks?id=eq.${id}`,
         {
@@ -4083,21 +4083,53 @@ export default function App() {
   // Atajo: abre la cámara para escanear el albarán cuando es entrega
   // o recogida de palets, y completa la tarea automáticamente al
   // aceptar la foto. Para recogidas de residuos no hace falta foto
-  // (ya tienen el DIR), así que cae al markComplete normal.
-  const handleCompleteTask = (task) => {
-    // En recogidas de RESIDUOS exigimos que esté rellena la cantidad
-    // (kg netos) antes de poder completarla — es un campo obligatorio
-    // del DIR.
+  // (ya tienen el DIR), pero pide los kilos antes de completar.
+  const handleCompleteTask = async (task) => {
     const isResiduos =
       task.type === "recogida" && task.subtype !== "palets";
     if (isResiduos) {
-      const q = (task.quantity || "").toString().trim();
-      if (!q) {
-        alert(
-          "Antes de completar esta recogida tienes que rellenar la cantidad (kg netos). Edita la tarea con el lápiz, mete los kilos y vuelve a intentarlo.",
-        );
+      // Pedimos al chófer/admin los kg netos. Pre-rellenamos con la
+      // cantidad que ya tuviera la tarea (si la había). Cancelar
+      // aborta la operación; aceptar guarda los kg y completa.
+      const initial = (task.quantity || "").toString();
+      const input = window.prompt(
+        "Introduce los kg netos de la recogida (obligatorio para el DIR):",
+        initial,
+      );
+      if (input === null) return;            // cancelado
+      const kgs = input.toString().trim();
+      if (!kgs) {
+        alert("Tienes que introducir un valor en kg para completar la recogida.");
         return;
       }
+      // Guardamos los kg en la tarea antes de completarla
+      try {
+        await sbFetch(
+          `tasks?id=eq.${task.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ quantity: kgs }),
+            headers: { Prefer: "return=minimal" },
+          },
+          token,
+        );
+        // Actualizamos la copia local para que el envío del DIR
+        // y el resto de la lógica usen ya los kg correctos.
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? { ...t, quantity: kgs } : t)),
+        );
+        task = { ...task, quantity: kgs };
+      } catch (e) {
+        setError("No se pudo guardar la cantidad: " + (e.message || e));
+        return;
+      }
+      // Una vez guardados los kg, marcamos como completada (esto a
+      // su vez dispara el envío automático del DIR). Le pasamos la
+      // tarea con los kg actualizados como override para que el
+      // DIR salga con la cantidad correcta sin esperar a que el
+      // estado de React se refresque.
+      markComplete(task.id, task);
+      return;
     }
     const needsPhoto =
       task.type === "entrega" ||
@@ -4991,22 +5023,24 @@ export default function App() {
                         ✉
                       </button>
                       </>)}
-                      <button
-                        onClick={() => setModal(task)}
-                        style={{
-                          width: 40,
-                          padding: "10px",
-                          borderRadius: 10,
-                          border: "1px solid #1E2D3D",
-                          background: "transparent",
-                          color: "#818CF8",
-                          cursor: "pointer",
-                          fontSize: 15,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        ✏️
-                      </button>
+                      {!(task.type === "recogida" && task.subtype !== "palets") && (
+                        <button
+                          onClick={() => setModal(task)}
+                          style={{
+                            width: 40,
+                            padding: "10px",
+                            borderRadius: 10,
+                            border: "1px solid #1E2D3D",
+                            background: "transparent",
+                            color: "#818CF8",
+                            cursor: "pointer",
+                            fontSize: 15,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          ✏️
+                        </button>
+                      )}
                       {isAdmin && (
                         <button
                           onClick={() => setDeleteId(task.id)}
