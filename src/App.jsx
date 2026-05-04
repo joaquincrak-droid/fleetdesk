@@ -5060,7 +5060,7 @@ export default function App() {
                         ✉
                       </button>
                       </>)}
-                      {!(task.type === "recogida" && task.subtype !== "palets") && (
+                      {isAdmin && !(task.type === "recogida" && task.subtype !== "palets") && (
                         <button
                           onClick={() => setModal(task)}
                           style={{
