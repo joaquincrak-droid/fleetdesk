@@ -4131,15 +4131,52 @@ export default function App() {
       markComplete(task.id, task);
       return;
     }
-    const needsPhoto =
-      task.type === "entrega" ||
-      (task.type === "recogida" && task.subtype === "palets");
-    if (!needsPhoto) {
-      markComplete(task.id);
+    // Recogida de palets: pedimos la cantidad total antes de pasar
+    // a la foto del albarán.
+    if (task.type === "recogida" && task.subtype === "palets") {
+      const initial = (task.quantity || "").toString();
+      const input = window.prompt(
+        "Introduce la cantidad total de palets recogidos:",
+        initial,
+      );
+      if (input === null) return;            // cancelado
+      const cant = input.toString().trim();
+      if (!cant) {
+        alert("Tienes que introducir la cantidad total de palets.");
+        return;
+      }
+      try {
+        await sbFetch(
+          `tasks?id=eq.${task.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ quantity: cant }),
+            headers: { Prefer: "return=minimal" },
+          },
+          token,
+        );
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? { ...t, quantity: cant } : t)),
+        );
+        task = { ...task, quantity: cant };
+      } catch (e) {
+        setError("No se pudo guardar la cantidad: " + (e.message || e));
+        return;
+      }
+      setPhotoError("");
+      setPhotoTask(task);
       return;
     }
-    setPhotoError("");
-    setPhotoTask(task);
+
+    // Entregas: pasamos directamente a la foto del albarán.
+    if (task.type === "entrega") {
+      setPhotoError("");
+      setPhotoTask(task);
+      return;
+    }
+
+    // Resto (raros): completar directo.
+    markComplete(task.id);
   };
 
   const handlePhotoAccept = async (base64, customName = "") => {
@@ -4950,7 +4987,7 @@ export default function App() {
                       >
                         ⟳ Estado
                       </button>
-                      {task.type === "recogida" && task.subtype !== "palets" && (<>
+                      {isAdmin && task.type === "recogida" && task.subtype !== "palets" && (<>
                       <button
                         onClick={() =>
                           generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
@@ -5070,7 +5107,7 @@ export default function App() {
                         marginTop: 10,
                       }}
                     >
-                      {task.type === "recogida" && task.subtype !== "palets" && (<>
+                      {isAdmin && task.type === "recogida" && task.subtype !== "palets" && (<>
                       <button
                         onClick={() =>
                           generateDIR(task, settings, trucks.find((t) => t.id === task.truck)).catch(
