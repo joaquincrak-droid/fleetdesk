@@ -4198,15 +4198,13 @@ export default function App() {
   const handlePhotoAccept = async (base64, customName = "") => {
     if (!photoTask) return;
     // Buzón según el tipo de tarea:
-    //   - Entregas              → albaranes de entrega
-    //   - Recogidas de palets   → albaranes de recogida (palets)
-    //   - Recogidas de residuos → buzón de recogidas
+    //   - Entregas      → buzón de albaranes de entrega
+    //   - Recogidas     → buzón de albaranes de recogida
+    //                     (mismo para palets y para residuos)
     const dest =
       photoTask.type === "entrega"
-        ? "alabaranes.entregasjcpalets@hotmail.com"
-        : photoTask.subtype === "palets"
-          ? "albaranes.recogidasjcpalets@hotmail.com"
-          : "recogidas.jcpalets@hotmail.com";
+        ? "entregas.jcpalets@hotmail.com"
+        : "recogidas.jcpalets@hotmail.com";
     const truck = trucks.find((t) => t.id === photoTask.truck) || null;
     setPhotoSending(true);
     setPhotoError("");
