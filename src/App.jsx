@@ -1189,7 +1189,7 @@ async function sendDirEmail(task, settings, truck, accessToken) {
     },
     body: JSON.stringify({
       to: dest,
-      cc: "recipalets@jcpalets.com",
+      cc: "medioambiente.jcpalets@hotmail.com",
       bcc: driverEmail || undefined,
       subject,
       bodyHtml,
@@ -1751,6 +1751,15 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
+                        <label style={labelStyle}>Fecha de recogida</label>
+                        <input
+                          type="date"
+                          value={form.transport_date || ""}
+                          onChange={(e) => set("transport_date", e.target.value)}
+                          style={inp}
+                        />
+                      </div>
+                      <div>
                         <label style={labelStyle}>Hora</label>
                         <input
                           type="time"
@@ -1759,6 +1768,8 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                           style={inp}
                         />
                       </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
                         <label style={labelStyle}>Peso</label>
                         <input
@@ -1766,17 +1777,6 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                           onChange={(e) => set("weight", e.target.value)}
                           style={inp}
                           placeholder="ej. 800 kg"
-                        />
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div>
-                        <label style={labelStyle}>Cantidad / tipo de palets</label>
-                        <input
-                          value={form.quantity || ""}
-                          onChange={(e) => set("quantity", e.target.value)}
-                          style={inp}
-                          placeholder="ej. 20 europalet, 5 americanos"
                         />
                       </div>
                       <div>
@@ -1788,6 +1788,15 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                           placeholder="ej. PED-2026-0123"
                         />
                       </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Cantidad / tipo de palets</label>
+                      <input
+                        value={form.quantity || ""}
+                        onChange={(e) => set("quantity", e.target.value)}
+                        style={inp}
+                        placeholder="ej. 20 europalet, 5 americanos"
+                      />
                     </div>
                     {isAdmin && (
                       <div>
@@ -4181,9 +4190,13 @@ export default function App() {
 
   const handlePhotoAccept = async (base64, customName = "") => {
     if (!photoTask) return;
+    // Buzón distinto según el tipo de tarea:
+    //   - Entregas → albaranes de entrega
+    //   - Recogidas de palets → albaranes de recogida
     const dest =
-      settings?.email ||
-      "recipalets@jcpalets.com";
+      photoTask.type === "entrega"
+        ? "alabaranes.entregasjcpalets@hotmail.com"
+        : "albaranes.recogidasjcpalets@hotmail.com";
     const truck = trucks.find((t) => t.id === photoTask.truck) || null;
     setPhotoSending(true);
     setPhotoError("");
@@ -5021,7 +5034,7 @@ export default function App() {
                           const di = task.di_number || "(sin nº DI)";
                           const ok = confirm(
                             `¿Enviar el DIR ${di} de ${cli} a ${task.origin_email}?\n\n` +
-                            `Se mandará una copia a recipalets@jcpalets.com.\n\n` +
+                            `Se mandará una copia a medioambiente.jcpalets@hotmail.com.\n\n` +
                             `Comprueba que los datos del DIR son correctos antes de enviarlo.`
                           );
                           if (!ok) return;
@@ -5139,7 +5152,7 @@ export default function App() {
                           const di = task.di_number || "(sin nº DI)";
                           const ok = confirm(
                             `¿Enviar el DIR ${di} de ${cli} a ${task.origin_email}?\n\n` +
-                            `Se mandará una copia a recipalets@jcpalets.com.\n\n` +
+                            `Se mandará una copia a medioambiente.jcpalets@hotmail.com.\n\n` +
                             `Comprueba que los datos del DIR son correctos antes de enviarlo.`
                           );
                           if (!ok) return;
