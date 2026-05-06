@@ -2753,7 +2753,9 @@ function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, er
   const tipo = task.type === "recogida" ? "Recogida" : "Entrega";
   // En recogidas de palets el nombre del PDF se genera automático.
   // En entregas (y otros) se le pide al chófer que lo escriba.
-  const askName = !(task.type === "recogida" && task.subtype === "palets");
+  // Sólo en entregas pedimos el nombre del PDF al chófer. En las
+  // recogidas (palets y residuos) se autogenera el nombre.
+  const askName = task.type === "entrega";
 
   return (
     <div
@@ -4137,7 +4139,12 @@ export default function App() {
       // tarea con los kg actualizados como override para que el
       // DIR salga con la cantidad correcta sin esperar a que el
       // estado de React se refresque.
-      markComplete(task.id, task);
+      await markComplete(task.id, task);
+      // Justo después abrimos la cámara para que el chófer haga
+      // foto del albarán de recogida. Lo marcamos como completado
+      // ya, así handlePhotoAccept no vuelve a llamar a markComplete.
+      setPhotoError("");
+      setPhotoTask({ ...task, status: "completado" });
       return;
     }
     // Recogida de palets: pedimos la cantidad total antes de pasar
@@ -4190,19 +4197,28 @@ export default function App() {
 
   const handlePhotoAccept = async (base64, customName = "") => {
     if (!photoTask) return;
-    // Buzón distinto según el tipo de tarea:
-    //   - Entregas → albaranes de entrega
-    //   - Recogidas de palets → albaranes de recogida
+    // Buzón según el tipo de tarea:
+    //   - Entregas              → albaranes de entrega
+    //   - Recogidas de palets   → albaranes de recogida (palets)
+    //   - Recogidas de residuos → buzón de recogidas
     const dest =
       photoTask.type === "entrega"
         ? "alabaranes.entregasjcpalets@hotmail.com"
-        : "albaranes.recogidasjcpalets@hotmail.com";
+        : photoTask.subtype === "palets"
+          ? "albaranes.recogidasjcpalets@hotmail.com"
+          : "recogidas.jcpalets@hotmail.com";
     const truck = trucks.find((t) => t.id === photoTask.truck) || null;
     setPhotoSending(true);
     setPhotoError("");
     try {
       await sendDeliveryPhoto(photoTask, base64, dest, token, truck, customName);
-      await markComplete(photoTask.id);
+      // Si la tarea aún no está completada (entrega o palet
+      // recogida), la completamos ahora. Para recogidas de
+      // residuos llegamos aquí con la tarea YA completada
+      // (después del DIR), así que no la tocamos otra vez.
+      if (photoTask.status !== "completado") {
+        await markComplete(photoTask.id);
+      }
       setPhotoTask(null);
     } catch (e) {
       setPhotoError(e.message || "Error al enviar la foto.");
