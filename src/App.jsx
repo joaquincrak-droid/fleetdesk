@@ -3159,7 +3159,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
         .filter((o) => (o.razon_social || "").toLowerCase().includes(provQuery.toLowerCase()))
         .slice(0, 6);
 
-  const dest = "recogidas.jcpalets@hotmail.com";
+  const dest = "transportes.jcpalets@hotmail.com";
 
   // ── Envío del primer email (foto del albarán convertida a PDF) ──
   const sendPhotoEmail = async () => {
@@ -3187,7 +3187,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        to: dest,
+        to: "recogidas.jcpalets@hotmail.com",
         subject,
         bodyHtml,
         attachments: [
@@ -6258,7 +6258,7 @@ export default function App() {
           >
             {[
               { id: "camiones", label: "🚛 Camiones", color: "#818CF8" },
-              { id: "recogidas", label: "📥 Recogidas", color: "#F59E0B" },
+              { id: "recogidas", label: "📥 Descargas", color: "#F59E0B" },
             ].map((s) => {
               const active = section === s.id;
               return (
