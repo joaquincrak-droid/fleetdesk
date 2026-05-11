@@ -2909,10 +2909,535 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
   );
 }
 
+// Calcula el siguiente número correlativo interno (E-AAAA-NNNN)
+// mirando el último que haya en palet_entries para el año actual.
+async function nextEntryNumber(token) {
+  const year = new Date().getFullYear();
+  const prefix = `E-${year}-`;
+  try {
+    const rows = await sbFetch(
+      `palet_entries?numero_interno=like.${encodeURIComponent(prefix)}*&select=numero_interno&order=numero_interno.desc&limit=20`,
+      {},
+      token,
+    );
+    let max = 0;
+    for (const r of rows || []) {
+      const m = (r.numero_interno || "").match(/-(\d+)$/);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n) && n > max) max = n;
+      }
+    }
+    return `${prefix}${String(max + 1).padStart(4, "0")}`;
+  } catch {
+    return `${prefix}0001`;
+  }
+}
+
+// ── Asistente 3 pasos para nueva entrada de palets ─────────
+function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
+  const [step, setStep] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [data, setData] = useState({
+    numero_interno: "",
+    proveedor: "",
+    proveedor_cif: "",
+    albaran: "",
+    foto_albaran: "",
+    transportista: "",
+    transportista_cif: "",
+    matricula: "",
+    chofer_nombre: "",
+    chofer_firma: "",
+  });
+  const setF = (k, v) => setData((d) => ({ ...d, [k]: v }));
+
+  // Calcular nº interno al abrir el asistente
+  useEffect(() => {
+    nextEntryNumber(token).then((n) => setF("numero_interno", n));
+  }, []);
+
+  // Step 2: cámara
+  const [preview, setPreview] = useState(null);
+  const [photoB64, setPhotoB64] = useState(null);
+  const fileRef = useRef(null);
+  const onPickFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true);
+    try {
+      const { base64, dataUrl } = await compressImage(f);
+      setPreview(dataUrl);
+      setPhotoB64(base64);
+    } catch {
+      setError("No se pudo cargar la imagen");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Autocompletado de proveedores en step 1
+  const [provQuery, setProvQuery] = useState("");
+  const [showSuggest, setShowSuggest] = useState(false);
+  const suggestions = !provQuery.trim()
+    ? []
+    : (operators || [])
+        .filter((o) => (o.razon_social || "").toLowerCase().includes(provQuery.toLowerCase()))
+        .slice(0, 6);
+
+  const dest = "recogidas.jcpalets@hotmail.com";
+
+  // ── Envío del primer email (foto del albarán) ──
+  const sendPhotoEmail = async () => {
+    if (!photoB64) return;
+    const subject = `📥 Entrada de palets · ${data.numero_interno} · ${data.proveedor}`;
+    const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
+<p>Se ha registrado una nueva entrada de palets:</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº interno</td><td><strong>${data.numero_interno}</strong></td></tr>
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
+  ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
+</table>
+<p>Adjunto la foto del albarán original. Los datos del transporte y la firma del chófer se envían a continuación.</p>
+<hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
+<p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
+</body></html>`;
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${token || SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: dest,
+        subject,
+        bodyHtml,
+        attachments: [
+          {
+            filename: `albaran_${data.numero_interno}.jpg`,
+            contentType: "image/jpeg",
+            contentBase64: photoB64,
+          },
+        ],
+      }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  };
+
+  // ── Guardado en BBDD + envío del email final con firma ──
+  const finalSave = async () => {
+    if (!data.chofer_firma) {
+      setError("El chófer tiene que firmar antes de finalizar.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      // Insert en palet_entries
+      const row = {
+        numero_interno: data.numero_interno,
+        proveedor: data.proveedor,
+        proveedor_cif: data.proveedor_cif || null,
+        albaran: data.albaran || null,
+        foto_albaran: photoB64 || null,
+        fecha: new Date().toISOString().slice(0, 10),
+        transportista: data.transportista || null,
+        transportista_cif: data.transportista_cif || null,
+        matricula: data.matricula || null,
+        chofer_nombre: data.chofer_nombre || null,
+        chofer_firma: data.chofer_firma || null,
+      };
+      await sbFetch(
+        "palet_entries",
+        {
+          method: "POST",
+          body: JSON.stringify(row),
+          headers: { Prefer: "return=minimal" },
+        },
+        token,
+      );
+
+      // Segundo email: datos del transporte + firma inline
+      const firmaB64 = data.chofer_firma.replace(/^data:image\/png;base64,/, "");
+      const subject = `✅ Entrada de palets confirmada · ${data.numero_interno} · ${data.proveedor}`;
+      const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
+<p>Entrada confirmada con los datos del transporte y la firma del chófer:</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº interno</td><td><strong>${data.numero_interno}</strong></td></tr>
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
+  ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
+  ${data.transportista ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Empresa transportista</td><td><strong>${data.transportista}</strong></td></tr>` : ""}
+  ${data.matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Matrícula camión</td><td><strong>${data.matricula}</strong></td></tr>` : ""}
+  ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
+  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
+</table>
+<p><strong>Firma del chófer:</strong></p>
+<img src="cid:firma" alt="firma" style="border:1px solid #ccc;background:#fff;padding:6px;max-width:360px;display:block;" />
+<hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
+<p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
+</body></html>`;
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${token || SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: dest,
+          subject,
+          bodyHtml,
+          attachments: [
+            {
+              filename: "firma.png",
+              contentType: "image/png",
+              contentBase64: firmaB64,
+              inline: true,
+              contentId: "firma",
+            },
+          ],
+        }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+
+      onSaved?.();
+      onClose?.();
+    } catch (e) {
+      setError("No se pudo finalizar: " + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const wrapStyle = {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+    backdropFilter: "blur(8px)", zIndex: 220, display: "flex",
+    alignItems: "center", justifyContent: "center", padding: 16,
+  };
+  const boxStyle = {
+    background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+    padding: 20, width: "100%", maxWidth: 520, maxHeight: "92vh", overflowY: "auto",
+  };
+  const headerStyle = { fontSize: 16, fontWeight: 700, color: "#E2E8F0", marginBottom: 4 };
+  const subStyle = { fontSize: 12, color: "#64748B", marginBottom: 14 };
+
+  // STEP 1: datos básicos
+  if (step === 1) {
+    return (
+      <div style={wrapStyle} onClick={busy ? null : onClose}>
+        <div onClick={(e) => e.stopPropagation()} style={boxStyle}>
+          <div style={headerStyle}>📥 Nueva entrada · Paso 1 de 3</div>
+          <div style={subStyle}>
+            Nº interno: <strong style={{ color: "#E2E8F0" }}>{data.numero_interno || "…"}</strong>
+            <span style={{ marginLeft: 6, color: "#475569" }}>(asignado automáticamente)</span>
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              <label style={labelStyle}>Proveedor *</label>
+              <input
+                value={provQuery || data.proveedor}
+                onChange={(e) => {
+                  setProvQuery(e.target.value);
+                  setF("proveedor", e.target.value);
+                  setShowSuggest(true);
+                }}
+                onFocus={() => setShowSuggest(true)}
+                onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+                style={inp}
+                placeholder="Empresa que nos vende los palets"
+                autoComplete="off"
+              />
+              {showSuggest && suggestions.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute", top: "100%", left: 0, right: 0,
+                    background: "#0F1E33", border: "1px solid #1E2D3D",
+                    borderRadius: 10, marginTop: 4, maxHeight: 200,
+                    overflowY: "auto", zIndex: 10,
+                  }}
+                >
+                  {suggestions.map((op) => (
+                    <div
+                      key={op.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setProvQuery(op.razon_social || "");
+                        setF("proveedor", op.razon_social || "");
+                        setF("proveedor_cif", op.cif || "");
+                        setShowSuggest(false);
+                      }}
+                      style={{
+                        padding: "10px 12px", cursor: "pointer",
+                        borderBottom: "1px solid #1E2D3D",
+                        color: "#E2E8F0", fontSize: 13,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700 }}>{op.razon_social}</div>
+                      <div style={{ fontSize: 11, color: "#64748B" }}>
+                        {[op.cif, op.municipio].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label style={labelStyle}>Nº albarán del proveedor *</label>
+              <input
+                value={data.albaran}
+                onChange={(e) => setF("albaran", e.target.value)}
+                style={inp}
+                placeholder="El que viene escrito en el albarán físico"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          {error && (
+            <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(248,113,113,0.12)", color: "#F87171", fontSize: 12, marginTop: 12 }}>
+              {error}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "flex-end" }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+                background: "transparent", color: "#64748B", cursor: "pointer",
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                if (!data.proveedor.trim()) return setError("Indica el proveedor.");
+                if (!data.albaran.trim()) return setError("Indica el nº de albarán del proveedor.");
+                setError("");
+                setStep(2);
+              }}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg,#F59E0B,#EA580C)", color: "#fff",
+                cursor: "pointer", fontWeight: 700, fontSize: 13,
+              }}
+            >
+              Continuar →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 2: foto del albarán
+  if (step === 2) {
+    return (
+      <div style={wrapStyle} onClick={busy ? null : onClose}>
+        <div onClick={(e) => e.stopPropagation()} style={boxStyle}>
+          <div style={headerStyle}>📷 Nueva entrada · Paso 2 de 3</div>
+          <div style={subStyle}>
+            Haz una foto al albarán del proveedor para enviarlo al correo de recogidas.
+          </div>
+          {!preview ? (
+            <div
+              style={{
+                border: "2px dashed #1E2D3D", borderRadius: 12,
+                padding: "28px 16px", textAlign: "center", color: "#94A3B8",
+                fontSize: 14, marginBottom: 14,
+              }}
+            >
+              <div style={{ fontSize: 36, marginBottom: 10 }}>📷</div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={busy}
+                style={{
+                  padding: "12px 22px", borderRadius: 10, border: "none",
+                  background: "linear-gradient(135deg,#F59E0B,#EA580C)", color: "#fff",
+                  cursor: "pointer", fontWeight: 700, fontSize: 14,
+                }}
+              >
+                {busy ? "Cargando…" : "Abrir cámara"}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={onPickFile}
+                style={{ display: "none" }}
+              />
+            </div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              <img
+                src={preview}
+                alt="Albarán"
+                style={{
+                  width: "100%", maxHeight: 360, objectFit: "contain",
+                  borderRadius: 10, border: "1px solid #1E2D3D", display: "block",
+                }}
+              />
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 8 }}>
+                <button
+                  onClick={() => { setPreview(null); setPhotoB64(null); setTimeout(() => fileRef.current?.click(), 50); }}
+                  style={{
+                    padding: "6px 12px", borderRadius: 8, border: "1px solid #1E2D3D",
+                    background: "transparent", color: "#94A3B8", cursor: "pointer", fontSize: 12,
+                  }}
+                >
+                  ↻ Repetir
+                </button>
+              </div>
+            </div>
+          )}
+          {error && (
+            <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(248,113,113,0.12)", color: "#F87171", fontSize: 12, marginBottom: 12 }}>
+              {error}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+            <button
+              onClick={() => setStep(1)}
+              disabled={busy}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+                background: "transparent", color: "#94A3B8", cursor: "pointer",
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              ← Atrás
+            </button>
+            <button
+              onClick={async () => {
+                if (!photoB64) return setError("Tienes que hacer la foto del albarán.");
+                setBusy(true);
+                setError("");
+                try {
+                  setF("foto_albaran", photoB64);
+                  await sendPhotoEmail();
+                  setStep(3);
+                } catch (e) {
+                  setError("No se pudo enviar la foto: " + e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy || !photoB64}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "none",
+                background: busy || !photoB64 ? "#1E2D3D" : "linear-gradient(135deg,#F59E0B,#EA580C)",
+                color: busy || !photoB64 ? "#475569" : "#fff",
+                cursor: busy || !photoB64 ? "not-allowed" : "pointer",
+                fontWeight: 700, fontSize: 13,
+              }}
+            >
+              {busy ? "Enviando…" : "Aceptar y continuar →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 3: transporte + firma
+  return (
+    <div style={wrapStyle} onClick={busy ? null : onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={boxStyle}>
+        <div style={headerStyle}>✍ Nueva entrada · Paso 3 de 3</div>
+        <div style={subStyle}>
+          Rellena los datos del transporte y la firma del chófer.
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Empresa transportista</label>
+              <input
+                value={data.transportista}
+                onChange={(e) => setF("transportista", e.target.value)}
+                style={inp}
+                placeholder="Razón social del transportista"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>CIF transportista</label>
+              <input
+                value={data.transportista_cif}
+                onChange={(e) => setF("transportista_cif", e.target.value)}
+                style={inp}
+                placeholder="opcional"
+              />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Matrícula camión</label>
+              <input
+                value={data.matricula}
+                onChange={(e) => setF("matricula", e.target.value)}
+                style={inp}
+                placeholder="ej. 1234ABC"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Nombre del chófer</label>
+              <input
+                value={data.chofer_nombre}
+                onChange={(e) => setF("chofer_nombre", e.target.value)}
+                style={inp}
+                placeholder="Nombre y apellidos"
+              />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Firma del chófer *</label>
+            <SignaturePad value={data.chofer_firma} onChange={(v) => setF("chofer_firma", v)} />
+          </div>
+        </div>
+        {error && (
+          <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(248,113,113,0.12)", color: "#F87171", fontSize: 12, marginTop: 12 }}>
+            {error}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "space-between" }}>
+          <button
+            onClick={() => setStep(2)}
+            disabled={busy}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+              background: "transparent", color: "#94A3B8", cursor: "pointer",
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            ← Atrás
+          </button>
+          <button
+            onClick={finalSave}
+            disabled={busy}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "none",
+              background: busy ? "#1E2D3D" : "linear-gradient(135deg,#10B981,#059669)",
+              color: busy ? "#475569" : "#fff",
+              cursor: busy ? "not-allowed" : "pointer",
+              fontWeight: 700, fontSize: 13,
+            }}
+          >
+            {busy ? "Enviando…" : "✓ Guardar y enviar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PaletEntriesListModal({ token, operators = [], onClose }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
+  const [showWizard, setShowWizard] = useState(false);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
 
@@ -2972,6 +3497,19 @@ function PaletEntriesListModal({ token, operators = [], onClose }) {
     await load();
   };
 
+  if (showWizard) {
+    return (
+      <PaletEntryWizard
+        token={token}
+        operators={operators}
+        onClose={() => setShowWizard(false)}
+        onSaved={() => {
+          setShowWizard(false);
+          load();
+        }}
+      />
+    );
+  }
   if (editing !== null) {
     return (
       <PaletEntryFormModal
@@ -3031,10 +3569,10 @@ function PaletEntriesListModal({ token, operators = [], onClose }) {
             📥 Entradas de palets ({entries.length})
           </div>
           <button
-            onClick={() => setEditing({})}
+            onClick={() => setShowWizard(true)}
             style={{
               padding: "8px 14px", borderRadius: 10, border: "none",
-              background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+              background: "linear-gradient(135deg,#F59E0B,#EA580C)", color: "#fff",
               cursor: "pointer", fontWeight: 700, fontSize: 13,
             }}
           >
