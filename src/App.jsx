@@ -2495,6 +2495,115 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
 }
 
 // ── Entradas de palets (compras a proveedores) ───────────────
+// Componente para firmar a mano con el dedo o el ratón. La firma
+// se guarda como PNG en base64 (data URL) en el campo del form.
+function SignaturePad({ value, onChange, height = 140 }) {
+  const canvasRef = useRef(null);
+  const drawing = useRef(false);
+  const lastPt = useRef(null);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    // Ajustamos el canvas al tamaño real del CSS para que se vea
+    // nítido en pantallas con devicePixelRatio > 1.
+    const ratio = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+    c.width = rect.width * ratio;
+    c.height = rect.height * ratio;
+    const ctx = c.getContext("2d");
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#0A1628";
+    if (value) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = value;
+    }
+  }, []);
+
+  const ptFrom = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const src = e.touches?.[0] || e;
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  };
+  const start = (e) => {
+    e.preventDefault();
+    drawing.current = true;
+    lastPt.current = ptFrom(e);
+  };
+  const move = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const p = ptFrom(e);
+    ctx.beginPath();
+    ctx.moveTo(lastPt.current.x, lastPt.current.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastPt.current = p;
+  };
+  const end = () => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    onChange?.(canvasRef.current.toDataURL("image/png"));
+  };
+  const clear = () => {
+    const c = canvasRef.current;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    onChange?.("");
+  };
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        onMouseDown={start}
+        onMouseMove={move}
+        onMouseUp={end}
+        onMouseLeave={end}
+        onTouchStart={start}
+        onTouchMove={move}
+        onTouchEnd={end}
+        style={{
+          border: "1px solid #1E2D3D",
+          borderRadius: 10,
+          background: "#fff",
+          width: "100%",
+          height,
+          touchAction: "none",
+          cursor: "crosshair",
+          display: "block",
+        }}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+        <span style={{ fontSize: 10, color: "#64748B" }}>
+          {value ? "Firma capturada — para repetir, pulsa ↻" : "Firma con el dedo o el ratón"}
+        </span>
+        <button
+          type="button"
+          onClick={clear}
+          style={{
+            padding: "5px 10px",
+            borderRadius: 8,
+            border: "1px solid #1E2D3D",
+            background: "transparent",
+            color: "#94A3B8",
+            cursor: "pointer",
+            fontSize: 11,
+            fontFamily: "inherit",
+          }}
+        >
+          ↻ Borrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave, onDelete }) {
   const isEdit = !!(existing && existing.id);
   const [entry, setEntry] = useState(
@@ -2510,6 +2619,11 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
           precio_total: existing.precio_total ?? "",
           albaran: existing.albaran || "",
           notes: existing.notes || "",
+          transportista: existing.transportista || "",
+          transportista_cif: existing.transportista_cif || "",
+          matricula: existing.matricula || "",
+          chofer_nombre: existing.chofer_nombre || "",
+          chofer_firma: existing.chofer_firma || "",
         }
       : {
           fecha: new Date().toISOString().slice(0, 10),
@@ -2521,6 +2635,11 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
           precio_total: "",
           albaran: "",
           notes: "",
+          transportista: "",
+          transportista_cif: "",
+          matricula: "",
+          chofer_nombre: "",
+          chofer_firma: "",
         }
   );
   const set = (k, v) => setEntry((e) => ({ ...e, [k]: v }));
@@ -2687,6 +2806,57 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
               placeholder="Estado, observaciones…"
             />
           </div>
+
+          <div style={{ marginTop: 4, paddingTop: 10, borderTop: "1px dashed #1E2D3D", fontSize: 11, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Empresa transportista y chófer
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Empresa que descarga</label>
+              <input
+                value={entry.transportista}
+                onChange={(e) => set("transportista", e.target.value)}
+                style={inp}
+                placeholder="Razón social de la empresa transportista"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>CIF transportista</label>
+              <input
+                value={entry.transportista_cif}
+                onChange={(e) => set("transportista_cif", e.target.value)}
+                style={inp}
+                placeholder="ej. B12345678"
+              />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Matrícula camión</label>
+              <input
+                value={entry.matricula}
+                onChange={(e) => set("matricula", e.target.value)}
+                style={inp}
+                placeholder="ej. 1234ABC"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Nombre del chófer</label>
+              <input
+                value={entry.chofer_nombre}
+                onChange={(e) => set("chofer_nombre", e.target.value)}
+                style={inp}
+                placeholder="Nombre y apellidos"
+              />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Firma del chófer</label>
+            <SignaturePad
+              value={entry.chofer_firma}
+              onChange={(v) => set("chofer_firma", v)}
+            />
+          </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
           <div>
@@ -2767,6 +2937,8 @@ function PaletEntriesListModal({ token, operators = [], onClose }) {
     const ALLOWED = [
       "fecha", "proveedor", "proveedor_cif", "cantidad", "tipo",
       "precio_unitario", "precio_total", "albaran", "notes",
+      "transportista", "transportista_cif", "matricula",
+      "chofer_nombre", "chofer_firma",
     ];
     const clean = {};
     for (const k of ALLOWED) {
@@ -4974,25 +5146,6 @@ export default function App() {
             )}
             {isAdmin && (
               <button
-                onClick={() => setShowEntradas(true)}
-                title="Entradas de palets"
-                style={{
-                  background: "#1E2D3D",
-                  border: "none",
-                  color: "#94A3B8",
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontSize: 14,
-                  fontFamily: "inherit",
-                }}
-              >
-                📥
-              </button>
-            )}
-            {isAdmin && (
-              <button
                 onClick={() => setView("ajustes")}
                 title="Ajustes"
                 style={{
@@ -5825,7 +5978,7 @@ export default function App() {
         })()}
       </div>
 
-      {/* FAB: admin siempre, conductor sólo si tiene camión asignado */}
+      {/* FAB: nueva tarea (admin siempre, conductor sólo si tiene camión) */}
       {activeTab === "activas" && (isAdmin || truckId) && (
         <button
           onClick={() => setModal("new")}
@@ -5850,6 +6003,34 @@ export default function App() {
           }}
         >
           +
+        </button>
+      )}
+
+      {/* FAB secundario: entradas de palets (sólo admin) */}
+      {activeTab === "activas" && isAdmin && (
+        <button
+          onClick={() => setShowEntradas(true)}
+          title="Entradas de palets"
+          style={{
+            position: "fixed",
+            bottom: 96,
+            right: 20,
+            width: 58,
+            height: 58,
+            borderRadius: 29,
+            background: "linear-gradient(135deg,#F59E0B,#EA580C)",
+            border: "none",
+            color: "#fff",
+            fontSize: 26,
+            cursor: "pointer",
+            boxShadow: "0 8px 32px rgba(245,158,11,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 60,
+          }}
+        >
+          📥
         </button>
       )}
 
