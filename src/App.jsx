@@ -2494,6 +2494,484 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
   );
 }
 
+// ── Entradas de palets (compras a proveedores) ───────────────
+function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave, onDelete }) {
+  const isEdit = !!(existing && existing.id);
+  const [entry, setEntry] = useState(
+    existing
+      ? {
+          id: existing.id,
+          fecha: existing.fecha || "",
+          proveedor: existing.proveedor || "",
+          proveedor_cif: existing.proveedor_cif || "",
+          cantidad: existing.cantidad ?? "",
+          tipo: existing.tipo || "",
+          precio_unitario: existing.precio_unitario ?? "",
+          precio_total: existing.precio_total ?? "",
+          albaran: existing.albaran || "",
+          notes: existing.notes || "",
+        }
+      : {
+          fecha: new Date().toISOString().slice(0, 10),
+          proveedor: "",
+          proveedor_cif: "",
+          cantidad: "",
+          tipo: "",
+          precio_unitario: "",
+          precio_total: "",
+          albaran: "",
+          notes: "",
+        }
+  );
+  const set = (k, v) => setEntry((e) => ({ ...e, [k]: v }));
+  const [provQuery, setProvQuery] = useState(entry.proveedor);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const suggestions = !provQuery.trim()
+    ? []
+    : (operators || [])
+        .filter((o) => (o.razon_social || "").toLowerCase().includes(provQuery.toLowerCase()))
+        .slice(0, 6);
+
+  // Auto-calcular precio_total si tenemos cantidad y precio_unitario
+  useEffect(() => {
+    const c = parseFloat(entry.cantidad);
+    const u = parseFloat(entry.precio_unitario);
+    if (!isNaN(c) && !isNaN(u)) {
+      const total = (c * u).toFixed(2);
+      if (String(entry.precio_total) !== String(total)) {
+        setEntry((e) => ({ ...e, precio_total: total }));
+      }
+    }
+  }, [entry.cantidad, entry.precio_unitario]);
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)", zIndex: 220, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 520, maxHeight: "92vh", overflowY: "auto",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", marginBottom: 14 }}>
+          {isEdit ? "Editar entrada de palets" : "Nueva entrada de palets"}
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Fecha</label>
+              <input
+                type="date"
+                value={entry.fecha}
+                onChange={(e) => set("fecha", e.target.value)}
+                style={inp}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Nº albarán</label>
+              <input
+                value={entry.albaran}
+                onChange={(e) => set("albaran", e.target.value)}
+                style={inp}
+                placeholder="ej. ALB-0123"
+              />
+            </div>
+          </div>
+          <div style={{ position: "relative" }}>
+            <label style={labelStyle}>Proveedor *</label>
+            <input
+              value={provQuery}
+              onChange={(e) => {
+                setProvQuery(e.target.value);
+                set("proveedor", e.target.value);
+                setShowSuggest(true);
+              }}
+              onFocus={() => setShowSuggest(true)}
+              onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+              style={inp}
+              placeholder="Empresa que nos vende los palets"
+              autoComplete="off"
+            />
+            {showSuggest && suggestions.length > 0 && (
+              <div
+                style={{
+                  position: "absolute", top: "100%", left: 0, right: 0,
+                  background: "#0F1E33", border: "1px solid #1E2D3D",
+                  borderRadius: 10, marginTop: 4, maxHeight: 200,
+                  overflowY: "auto", zIndex: 10,
+                }}
+              >
+                {suggestions.map((op) => (
+                  <div
+                    key={op.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setProvQuery(op.razon_social || "");
+                      set("proveedor", op.razon_social || "");
+                      set("proveedor_cif", op.cif || "");
+                      setShowSuggest(false);
+                    }}
+                    style={{
+                      padding: "10px 12px", cursor: "pointer",
+                      borderBottom: "1px solid #1E2D3D",
+                      color: "#E2E8F0", fontSize: 13,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>{op.razon_social}</div>
+                    <div style={{ fontSize: 11, color: "#64748B" }}>
+                      {[op.cif, op.municipio].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Cantidad *</label>
+              <input
+                type="number"
+                value={entry.cantidad}
+                onChange={(e) => set("cantidad", e.target.value)}
+                style={inp}
+                placeholder="ej. 200"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Tipo de palet</label>
+              <input
+                value={entry.tipo}
+                onChange={(e) => set("tipo", e.target.value)}
+                style={inp}
+                placeholder="ej. europalet, americano, EPAL…"
+              />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Precio unitario (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={entry.precio_unitario}
+                onChange={(e) => set("precio_unitario", e.target.value)}
+                style={inp}
+                placeholder="ej. 3.50"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Precio total (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={entry.precio_total}
+                onChange={(e) => set("precio_total", e.target.value)}
+                style={inp}
+                placeholder="se calcula automático"
+              />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Notas</label>
+            <input
+              value={entry.notes}
+              onChange={(e) => set("notes", e.target.value)}
+              style={inp}
+              placeholder="Estado, observaciones…"
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            {isEdit && onDelete && (
+              <button
+                onClick={async () => {
+                  if (!confirm("¿Eliminar esta entrada de palets? Esta acción no se puede deshacer.")) return;
+                  await onDelete(entry);
+                  onClose();
+                }}
+                style={{
+                  padding: "10px 16px", borderRadius: 10, border: "1px solid #7F1D1D",
+                  background: "transparent", color: "#F87171", cursor: "pointer",
+                  fontWeight: 600, fontSize: 13,
+                }}
+              >
+                🗑 Eliminar
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+                background: "transparent", color: "#64748B", cursor: "pointer",
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                if (!entry.proveedor.trim()) return alert("Proveedor obligatorio");
+                if (!entry.cantidad) return alert("Cantidad obligatoria");
+                onSave(entry);
+              }}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+                cursor: "pointer", fontWeight: 700, fontSize: 13,
+              }}
+            >
+              {isEdit ? "Guardar cambios" : "Guardar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaletEntriesListModal({ token, operators = [], onClose }) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await sbFetch(
+        "palet_entries?select=*&order=fecha.desc.nullslast,created_at.desc",
+        {},
+        token,
+      );
+      setEntries(data || []);
+    } catch (e) {
+      setError("Error al cargar entradas: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async (entry) => {
+    const ALLOWED = [
+      "fecha", "proveedor", "proveedor_cif", "cantidad", "tipo",
+      "precio_unitario", "precio_total", "albaran", "notes",
+    ];
+    const clean = {};
+    for (const k of ALLOWED) {
+      const v = entry[k];
+      if (k === "cantidad") clean[k] = v === "" ? null : parseInt(v, 10);
+      else if (k === "precio_unitario" || k === "precio_total") clean[k] = v === "" ? null : parseFloat(v);
+      else clean[k] = v ?? null;
+    }
+    if (entry.id) {
+      await sbFetch(
+        `palet_entries?id=eq.${entry.id}`,
+        { method: "PATCH", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token,
+      );
+    } else {
+      await sbFetch(
+        "palet_entries",
+        { method: "POST", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token,
+      );
+    }
+    await load();
+  };
+
+  const del = async (id) => {
+    await sbFetch(
+      `palet_entries?id=eq.${id}`,
+      { method: "DELETE", headers: { Prefer: "return=minimal" } },
+      token,
+    );
+    await load();
+  };
+
+  if (editing !== null) {
+    return (
+      <PaletEntryFormModal
+        existing={editing.id ? editing : null}
+        operators={operators}
+        onClose={() => setEditing(null)}
+        onSave={async (e) => {
+          try {
+            await save(e);
+            setEditing(null);
+          } catch (err) {
+            alert("No se pudo guardar: " + err.message);
+          }
+        }}
+        onDelete={async (e) => {
+          try {
+            await del(e.id);
+          } catch (err) {
+            alert("No se pudo eliminar: " + err.message);
+          }
+        }}
+      />
+    );
+  }
+
+  const norm = (s) => (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const q = norm(query.trim());
+  const filtered = entries.filter((e) => {
+    if (!q) return true;
+    return [e.proveedor, e.tipo, e.albaran, e.notes, e.fecha]
+      .filter(Boolean)
+      .some((s) => norm(s).includes(q));
+  });
+
+  const totalPalets = filtered.reduce((s, e) => s + (e.cantidad || 0), 0);
+  const totalEuros = filtered.reduce((s, e) => s + (parseFloat(e.precio_total) || 0), 0);
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)", zIndex: 200, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 720, maxHeight: "92vh",
+          display: "flex", flexDirection: "column", gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", flex: 1 }}>
+            📥 Entradas de palets ({entries.length})
+          </div>
+          <button
+            onClick={() => setEditing({})}
+            style={{
+              padding: "8px 14px", borderRadius: 10, border: "none",
+              background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+              cursor: "pointer", fontWeight: 700, fontSize: 13,
+            }}
+          >
+            + Nueva entrada
+          </button>
+        </div>
+        {error && (
+          <div
+            style={{
+              padding: "10px 12px", borderRadius: 10,
+              background: "rgba(248,113,113,0.12)", color: "#F87171",
+              fontSize: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+        <input
+          type="text"
+          placeholder="🔎 Buscar por proveedor, tipo, albarán, notas…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{
+            width: "100%", padding: "10px 12px", borderRadius: 10,
+            border: "1px solid #1E2D3D", background: "#0F1E33", color: "#E2E8F0",
+            fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+          }}
+        />
+        <div
+          style={{
+            display: "flex", gap: 14, fontSize: 12, color: "#94A3B8",
+            padding: "4px 2px",
+          }}
+        >
+          <span>📦 Total palets: <strong style={{ color: "#E2E8F0" }}>{totalPalets}</strong></span>
+          <span>💶 Total gastado: <strong style={{ color: "#E2E8F0" }}>{totalEuros.toFixed(2)} €</strong></span>
+        </div>
+        <div
+          style={{
+            flex: 1, overflowY: "auto", border: "1px solid #1E2D3D",
+            borderRadius: 10, background: "#0D1B2A",
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              Cargando…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              {entries.length
+                ? "Ninguna entrada coincide con la búsqueda."
+                : 'Aún no hay entradas. Pulsa "+ Nueva entrada" para registrar la primera.'}
+            </div>
+          ) : (
+            filtered.map((e, i) => (
+              <div
+                key={e.id}
+                onClick={() => setEditing(e)}
+                style={{
+                  padding: "12px 14px",
+                  borderBottom: i < filtered.length - 1 ? "1px solid #1E2D3D" : "none",
+                  cursor: "pointer",
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+                onMouseEnter={(ev) => (ev.currentTarget.style.background = "#13243A")}
+                onMouseLeave={(ev) => (ev.currentTarget.style.background = "transparent")}
+              >
+                <div style={{ color: "#94A3B8", fontSize: 11, minWidth: 70 }}>
+                  {e.fecha ? new Date(e.fecha + "T00:00").toLocaleDateString("es-ES") : "—"}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 14 }}>
+                    {e.proveedor}
+                  </div>
+                  <div style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                    {[
+                      e.cantidad ? `${e.cantidad} ud` : null,
+                      e.tipo,
+                      e.albaran ? `Alb. ${e.albaran}` : null,
+                    ].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                <div style={{ color: "#34D399", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {e.precio_total != null ? `${Number(e.precio_total).toFixed(2)} €` : "—"}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+              background: "transparent", color: "#94A3B8", cursor: "pointer",
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Users / Permissions Modal ────────────────────────────────
 // Sólo visible para administradores. Lista todos los usuarios
 // (auth.users via la columna email de profiles) y deja cambiar
@@ -3443,6 +3921,7 @@ export default function App() {
   const [operators, setOperators] = useState([]);
   const [showOperators, setShowOperators] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [showEntradas, setShowEntradas] = useState(false);
   const [photoTask, setPhotoTask] = useState(null);    // tarea pendiente de foto albarán
   const [photoSending, setPhotoSending] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -4495,6 +4974,25 @@ export default function App() {
             )}
             {isAdmin && (
               <button
+                onClick={() => setShowEntradas(true)}
+                title="Entradas de palets"
+                style={{
+                  background: "#1E2D3D",
+                  border: "none",
+                  color: "#94A3B8",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                }}
+              >
+                📥
+              </button>
+            )}
+            {isAdmin && (
+              <button
                 onClick={() => setView("ajustes")}
                 title="Ajustes"
                 style={{
@@ -5388,6 +5886,13 @@ export default function App() {
           token={token}
           trucks={trucks}
           onClose={() => setShowUsers(false)}
+        />
+      )}
+      {showEntradas && (
+        <PaletEntriesListModal
+          token={token}
+          operators={operators}
+          onClose={() => setShowEntradas(false)}
         />
       )}
       {photoTask && (
