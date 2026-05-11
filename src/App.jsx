@@ -2497,7 +2497,7 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
 // ── Entradas de palets (compras a proveedores) ───────────────
 // Componente para firmar a mano con el dedo o el ratón. La firma
 // se guarda como PNG en base64 (data URL) en el campo del form.
-function SignaturePad({ value, onChange, height = 140 }) {
+function SignatureCanvas({ initial = "", onChange, height = 140, big = false }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const lastPt = useRef(null);
@@ -2505,22 +2505,20 @@ function SignaturePad({ value, onChange, height = 140 }) {
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    // Ajustamos el canvas al tamaño real del CSS para que se vea
-    // nítido en pantallas con devicePixelRatio > 1.
     const ratio = window.devicePixelRatio || 1;
     const rect = c.getBoundingClientRect();
     c.width = rect.width * ratio;
     c.height = rect.height * ratio;
     const ctx = c.getContext("2d");
     ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2;
+    ctx.lineWidth = big ? 3 : 2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#0A1628";
-    if (value) {
+    if (initial) {
       const img = new Image();
       img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
-      img.src = value;
+      img.src = initial;
     }
   }, []);
 
@@ -2558,7 +2556,7 @@ function SignaturePad({ value, onChange, height = 140 }) {
   };
 
   return (
-    <div>
+    <>
       <canvas
         ref={canvasRef}
         onMouseDown={start}
@@ -2579,10 +2577,7 @@ function SignaturePad({ value, onChange, height = 140 }) {
           display: "block",
         }}
       />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
-        <span style={{ fontSize: 10, color: "#64748B" }}>
-          {value ? "Firma capturada — para repetir, pulsa ↻" : "Firma con el dedo o el ratón"}
-        </span>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
         <button
           type="button"
           onClick={clear}
@@ -2600,6 +2595,93 @@ function SignaturePad({ value, onChange, height = 140 }) {
           ↻ Borrar
         </button>
       </div>
+    </>
+  );
+}
+
+function SignaturePad({ value, onChange, height = 140 }) {
+  const [fullscreen, setFullscreen] = useState(false);
+  const [tempValue, setTempValue] = useState(value);
+  useEffect(() => { setTempValue(value); }, [value]);
+
+  return (
+    <div>
+      <SignatureCanvas
+        initial={value}
+        onChange={onChange}
+        height={height}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+        <span style={{ fontSize: 10, color: "#64748B" }}>
+          {value ? "Firma capturada" : "Firma con el dedo o el ratón"}
+        </span>
+        <button
+          type="button"
+          onClick={() => { setTempValue(value); setFullscreen(true); }}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "1px solid #1E2D3D",
+            background: "rgba(245,158,11,0.12)",
+            color: "#F59E0B",
+            cursor: "pointer",
+            fontSize: 11,
+            fontWeight: 700,
+            fontFamily: "inherit",
+          }}
+        >
+          ↗ Pantalla completa
+        </button>
+      </div>
+      {fullscreen && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)",
+            zIndex: 300, display: "flex", flexDirection: "column",
+            padding: 16,
+          }}
+        >
+          <div style={{ color: "#E2E8F0", fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+            ✍ Firma del chófer
+            <span style={{ marginLeft: 8, color: "#64748B", fontSize: 11, fontWeight: 500 }}>
+              Pinta dentro del recuadro blanco con el dedo o el ratón
+            </span>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+            <SignatureCanvas
+              initial={tempValue}
+              onChange={setTempValue}
+              height="100%"
+              big
+            />
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "flex-end" }}>
+            <button
+              onClick={() => setFullscreen(false)}
+              style={{
+                padding: "12px 18px", borderRadius: 10, border: "1px solid #1E2D3D",
+                background: "transparent", color: "#94A3B8", cursor: "pointer",
+                fontWeight: 600, fontSize: 14,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                onChange?.(tempValue || "");
+                setFullscreen(false);
+              }}
+              style={{
+                padding: "12px 22px", borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff",
+                cursor: "pointer", fontWeight: 700, fontSize: 14,
+              }}
+            >
+              ✓ Guardar firma
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3020,7 +3102,28 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
     matricula: "",
     chofer_nombre: "",
     chofer_firma: "",
+    articulos: [],
   });
+
+  // Manejo del array de artículos en el paso 1
+  const addArticulo = () => {
+    setData((d) => ({
+      ...d,
+      articulos: [...(d.articulos || []), { descripcion: "", cantidad: "", tipo: "" }],
+    }));
+  };
+  const setArticulo = (idx, key, val) => {
+    setData((d) => ({
+      ...d,
+      articulos: (d.articulos || []).map((a, i) => (i === idx ? { ...a, [key]: val } : a)),
+    }));
+  };
+  const delArticulo = (idx) => {
+    setData((d) => ({
+      ...d,
+      articulos: (d.articulos || []).filter((_, i) => i !== idx),
+    }));
+  };
   const setF = (k, v) => setData((d) => ({ ...d, [k]: v }));
 
   // Calcular nº interno al abrir el asistente
@@ -3109,6 +3212,13 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
     setError("");
     try {
       // Insert en palet_entries
+      const cleanArticulos = (data.articulos || [])
+        .filter((a) => a.descripcion || a.cantidad)
+        .map((a) => ({
+          descripcion: a.descripcion || "",
+          cantidad: a.cantidad ? parseInt(a.cantidad, 10) : null,
+          tipo: a.tipo || "",
+        }));
       const row = {
         numero_interno: data.numero_interno,
         proveedor: data.proveedor,
@@ -3121,6 +3231,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
         matricula: data.matricula || null,
         chofer_nombre: data.chofer_nombre || null,
         chofer_firma: data.chofer_firma || null,
+        articulos: cleanArticulos,
       };
       await sbFetch(
         "palet_entries",
@@ -3151,6 +3262,19 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
+${cleanArticulos.length ? `<p><strong>Artículos recibidos:</strong></p>
+<table cellpadding="4" cellspacing="0" style="border-collapse:collapse;margin:6px 0 14px 0;border:1px solid #ccc;">
+  <tr style="background:#f3f4f6;">
+    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Descripción</th>
+    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Cantidad</th>
+    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Tipo</th>
+  </tr>
+  ${cleanArticulos.map((a) => `<tr>
+    <td style="padding:5px;border:1px solid #ccc;">${a.descripcion || "—"}</td>
+    <td style="padding:5px;border:1px solid #ccc;">${a.cantidad ?? "—"}</td>
+    <td style="padding:5px;border:1px solid #ccc;">${a.tipo || "—"}</td>
+  </tr>`).join("")}
+</table>` : ""}
 <p><strong>Firma del chófer:</strong></p>
 <img src="cid:firma" alt="firma" style="border:1px solid #ccc;background:#fff;padding:6px;max-width:360px;display:block;" />
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
@@ -3271,6 +3395,97 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
                 autoComplete="off"
               />
             </div>
+
+            {/* Artículos */}
+            <div
+              style={{
+                paddingTop: 10,
+                borderTop: "1px dashed #1E2D3D",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ fontSize: 11, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Artículos ({(data.articulos || []).length})
+              </div>
+              <button
+                type="button"
+                onClick={addArticulo}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(135deg,#F59E0B,#EA580C)",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
+              >
+                + Añadir artículo
+              </button>
+            </div>
+            {(data.articulos || []).map((a, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 1fr 1fr auto",
+                  gap: 8,
+                  alignItems: "end",
+                  padding: "8px 10px",
+                  background: "#0D1B2A",
+                  borderRadius: 10,
+                  border: "1px solid #1E2D3D",
+                }}
+              >
+                <div>
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Descripción</label>
+                  <input
+                    value={a.descripcion}
+                    onChange={(e) => setArticulo(idx, "descripcion", e.target.value)}
+                    style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
+                    placeholder="ej. Europalet usado"
+                  />
+                </div>
+                <div>
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Cantidad</label>
+                  <input
+                    type="number"
+                    value={a.cantidad}
+                    onChange={(e) => setArticulo(idx, "cantidad", e.target.value)}
+                    style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
+                    placeholder="50"
+                  />
+                </div>
+                <div>
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Tipo</label>
+                  <input
+                    value={a.tipo}
+                    onChange={(e) => setArticulo(idx, "tipo", e.target.value)}
+                    style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
+                    placeholder="ej. EPAL"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => delArticulo(idx)}
+                  title="Eliminar artículo"
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #7F1D1D",
+                    background: "transparent",
+                    color: "#F87171",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+            ))}
           </div>
           {error && (
             <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(248,113,113,0.12)", color: "#F87171", fontSize: 12, marginTop: 12 }}>
@@ -3507,6 +3722,221 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Versión inline (no modal) de la lista de entradas. Se usa
+// como la sección principal cuando el admin elige "Recogidas"
+// en la cabecera. Comparte la misma lógica que la modal pero sin
+// el overlay fijo.
+function PaletEntriesInline({ token, operators = [] }) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [showWizard, setShowWizard] = useState(false);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await sbFetch(
+        "palet_entries?select=*&order=fecha.desc.nullslast,created_at.desc",
+        {},
+        token,
+      );
+      setEntries(data || []);
+    } catch (e) {
+      setError("Error al cargar entradas: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async (entry) => {
+    const ALLOWED = [
+      "fecha", "proveedor", "proveedor_cif", "cantidad", "tipo",
+      "precio_unitario", "precio_total", "albaran", "notes",
+      "transportista", "transportista_cif", "matricula",
+      "chofer_nombre", "chofer_firma", "ciudad_carga", "articulos",
+    ];
+    const clean = {};
+    for (const k of ALLOWED) {
+      const v = entry[k];
+      if (k === "cantidad") clean[k] = v === "" ? null : parseInt(v, 10);
+      else if (k === "precio_unitario" || k === "precio_total") clean[k] = v === "" ? null : parseFloat(v);
+      else clean[k] = v ?? null;
+    }
+    if (entry.id) {
+      await sbFetch(
+        `palet_entries?id=eq.${entry.id}`,
+        { method: "PATCH", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token,
+      );
+    } else {
+      await sbFetch(
+        "palet_entries",
+        { method: "POST", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token,
+      );
+    }
+    await load();
+  };
+
+  const del = async (id) => {
+    await sbFetch(
+      `palet_entries?id=eq.${id}`,
+      { method: "DELETE", headers: { Prefer: "return=minimal" } },
+      token,
+    );
+    await load();
+  };
+
+  const norm = (s) => (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const q = norm(query.trim());
+  const filtered = entries.filter((e) => {
+    if (!q) return true;
+    return [e.proveedor, e.tipo, e.albaran, e.numero_interno, e.notes, e.fecha]
+      .filter(Boolean)
+      .some((s) => norm(s).includes(q));
+  });
+  const totalEntradas = filtered.length;
+  const totalPalets = filtered.reduce((s, e) => {
+    if (Array.isArray(e.articulos) && e.articulos.length) {
+      return s + e.articulos.reduce((ss, a) => ss + (parseInt(a.cantidad, 10) || 0), 0);
+    }
+    return s + (e.cantidad || 0);
+  }, 0);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+        <input
+          type="text"
+          placeholder="🔎 Buscar por proveedor, tipo, nº albarán…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{
+            flex: 1, padding: "10px 12px", borderRadius: 10,
+            border: "1px solid #1E2D3D", background: "#0D1B2A", color: "#E2E8F0",
+            fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+          }}
+        />
+        <button
+          onClick={() => setShowWizard(true)}
+          style={{
+            padding: "10px 14px", borderRadius: 10, border: "none",
+            background: "linear-gradient(135deg,#F59E0B,#EA580C)", color: "#fff",
+            cursor: "pointer", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap",
+          }}
+        >
+          + Nueva entrada
+        </button>
+      </div>
+      <div
+        style={{
+          display: "flex", gap: 14, fontSize: 12, color: "#94A3B8",
+          padding: "0 2px 8px",
+        }}
+      >
+        <span>📥 Entradas: <strong style={{ color: "#E2E8F0" }}>{totalEntradas}</strong></span>
+        <span>📦 Total palets: <strong style={{ color: "#E2E8F0" }}>{totalPalets}</strong></span>
+      </div>
+      {error && (
+        <div
+          style={{
+            padding: "10px 12px", borderRadius: 10, marginBottom: 8,
+            background: "rgba(248,113,113,0.12)", color: "#F87171", fontSize: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          border: "1px solid #1E2D3D", borderRadius: 12, background: "#0A1628",
+          overflow: "hidden",
+        }}
+      >
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+            Cargando…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+            {entries.length
+              ? "Ninguna entrada coincide con la búsqueda."
+              : 'Aún no hay entradas. Pulsa "+ Nueva entrada" para registrar la primera.'}
+          </div>
+        ) : (
+          filtered.map((e, i) => (
+            <div
+              key={e.id}
+              onClick={() => setEditing(e)}
+              style={{
+                padding: "12px 14px",
+                borderBottom: i < filtered.length - 1 ? "1px solid #1E2D3D" : "none",
+                cursor: "pointer",
+                display: "grid",
+                gridTemplateColumns: "auto 1fr auto",
+                gap: 10,
+                alignItems: "center",
+              }}
+              onMouseEnter={(ev) => (ev.currentTarget.style.background = "#13243A")}
+              onMouseLeave={(ev) => (ev.currentTarget.style.background = "transparent")}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "#F59E0B", fontWeight: 700, fontSize: 11 }}>
+                  {e.numero_interno || "—"}
+                </div>
+                <div style={{ color: "#94A3B8", fontSize: 10, marginTop: 1 }}>
+                  {e.fecha ? new Date(e.fecha + "T00:00").toLocaleDateString("es-ES") : "—"}
+                </div>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 14 }}>
+                  {e.proveedor}
+                </div>
+                <div style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                  {[
+                    Array.isArray(e.articulos) && e.articulos.length
+                      ? `${e.articulos.length} art.`
+                      : e.cantidad ? `${e.cantidad} ud` : null,
+                    e.albaran ? `Alb. ${e.albaran}` : null,
+                    e.transportista,
+                  ].filter(Boolean).join(" · ")}
+                </div>
+              </div>
+              <div style={{ color: "#94A3B8", fontSize: 16 }}>›</div>
+            </div>
+          ))
+        )}
+      </div>
+      {showWizard && (
+        <PaletEntryWizard
+          token={token}
+          operators={operators}
+          onClose={() => setShowWizard(false)}
+          onSaved={() => { setShowWizard(false); load(); }}
+        />
+      )}
+      {editing !== null && (
+        <PaletEntryFormModal
+          existing={editing.id ? editing : null}
+          operators={operators}
+          onClose={() => setEditing(null)}
+          onSave={async (e) => {
+            try { await save(e); setEditing(null); }
+            catch (err) { alert("No se pudo guardar: " + err.message); }
+          }}
+          onDelete={async (e) => {
+            try { await del(e.id); }
+            catch (err) { alert("No se pudo eliminar: " + err.message); }
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -4698,6 +5128,7 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [activeTab, setActiveTab] = useState("activas");
+  const [section, setSection] = useState("camiones"); // "camiones" | "recogidas"
   const [filterTruck, setFilterTruck] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchText, setSearchText] = useState("");
@@ -5816,6 +6247,43 @@ export default function App() {
             </button>
           </div>
         </div>
+        {isAdmin && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            {[
+              { id: "camiones", label: "🚛 Camiones", color: "#818CF8" },
+              { id: "recogidas", label: "📥 Recogidas", color: "#F59E0B" },
+            ].map((s) => {
+              const active = section === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSection(s.id)}
+                  style={{
+                    padding: "11px",
+                    borderRadius: 12,
+                    border: active ? `2px solid ${s.color}` : "1px solid #1E2D3D",
+                    background: active ? `${s.color}25` : "#0D1B2A",
+                    color: active ? "#F1F5F9" : "#64748B",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {section === "camiones" && (<>
         <div
           style={{
             display: "grid",
@@ -5889,9 +6357,11 @@ export default function App() {
             </button>
           ))}
         </div>
+        </>)}
       </div>
 
       <div style={{ padding: "16px" }}>
+        {section === "camiones" && (<>
         {/* Buscador */}
         <div style={{ position: "relative", marginBottom: 10 }}>
           <input
@@ -6591,10 +7061,18 @@ export default function App() {
             </div>
           );
         })()}
+        </>)}
+
+        {section === "recogidas" && isAdmin && (
+          <PaletEntriesInline
+            token={token}
+            operators={operators}
+          />
+        )}
       </div>
 
       {/* FAB: nueva tarea (admin siempre, conductor sólo si tiene camión) */}
-      {activeTab === "activas" && (isAdmin || truckId) && (
+      {section === "camiones" && activeTab === "activas" && (isAdmin || truckId) && (
         <button
           onClick={() => setModal("new")}
           title={isAdmin ? "Nueva tarea" : "Nueva recogida"}
@@ -6621,33 +7099,6 @@ export default function App() {
         </button>
       )}
 
-      {/* FAB secundario: entradas de palets (sólo admin) */}
-      {activeTab === "activas" && isAdmin && (
-        <button
-          onClick={() => setShowEntradas(true)}
-          title="Entradas de palets"
-          style={{
-            position: "fixed",
-            bottom: 96,
-            right: 20,
-            width: 58,
-            height: 58,
-            borderRadius: 29,
-            background: "linear-gradient(135deg,#F59E0B,#EA580C)",
-            border: "none",
-            color: "#fff",
-            fontSize: 26,
-            cursor: "pointer",
-            boxShadow: "0 8px 32px rgba(245,158,11,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 60,
-          }}
-        >
-          📥
-        </button>
-      )}
 
       {modal && (
         <TaskModal
