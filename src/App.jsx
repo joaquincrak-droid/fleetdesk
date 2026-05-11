@@ -2909,6 +2909,76 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
   );
 }
 
+// Genera un PDF A4 con la foto del albarán de una entrada de
+// palets + cabecera con los datos básicos. Devuelve base64 sin
+// el prefijo "data:application/pdf;base64,".
+async function generateEntradaAlbaranPdf(data, photoBase64) {
+  await loadJsPdf();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const M = 15;
+  const W = 210 - 2 * M;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text("ALBARÁN DE ENTRADA DE PALETS", 105, M + 4, { align: "center" });
+
+  const rows = [];
+  rows.push(["Nº interno", data.numero_interno || "—"]);
+  rows.push(["Proveedor", data.proveedor || "—"]);
+  if (data.albaran) rows.push(["Nº albarán proveedor", data.albaran]);
+  rows.push(["Fecha y hora", new Date().toLocaleString("es-ES")]);
+
+  let y = M + 10;
+  const rowH = 5;
+  const boxH = rows.length * rowH + 4;
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.1);
+  doc.setFillColor(245, 245, 245);
+  doc.rect(M, y, W, boxH, "FD");
+  const labelX = M + 3;
+  const valueX = M + 40;
+  rows.forEach((r, i) => {
+    const yy = y + 4 + i * rowH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${r[0]}:`, labelX, yy);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(20, 20, 20);
+    doc.text(String(r[1]), valueX, yy, { maxWidth: W - 43 });
+  });
+  y += boxH + 4;
+
+  const imgX = M;
+  const imgY = y;
+  const maxW = W;
+  const maxH = 297 - imgY - 12;
+
+  const dims = await new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve({ w: im.width, h: im.height });
+    im.onerror = () => resolve({ w: maxW, h: maxH });
+    im.src = "data:image/jpeg;base64," + photoBase64;
+  });
+  const ratio = Math.min(maxW / dims.w, maxH / dims.h);
+  const drawW = dims.w * ratio;
+  const drawH = dims.h * ratio;
+  const drawX = imgX + (maxW - drawW) / 2;
+  doc.addImage("data:image/jpeg;base64," + photoBase64, "JPEG", drawX, imgY, drawW, drawH);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    "Documento generado por RECIPALETS TOTANA S.L.",
+    M, 297 - 5,
+  );
+
+  const dataUri = doc.output("datauristring");
+  return dataUri.split(",")[1];
+}
+
 // Calcula el siguiente número correlativo interno (E-AAAA-NNNN)
 // mirando el último que haya en palet_entries para el año actual.
 async function nextEntryNumber(token) {
@@ -2946,7 +3016,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
     albaran: "",
     foto_albaran: "",
     transportista: "",
-    transportista_cif: "",
+    ciudad_carga: "",
     matricula: "",
     chofer_nombre: "",
     chofer_firma: "",
@@ -2988,9 +3058,11 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
 
   const dest = "recogidas.jcpalets@hotmail.com";
 
-  // ── Envío del primer email (foto del albarán) ──
+  // ── Envío del primer email (foto del albarán convertida a PDF) ──
   const sendPhotoEmail = async () => {
     if (!photoB64) return;
+    // Generamos un PDF A4 con cabecera + la foto incrustada
+    const pdfB64 = await generateEntradaAlbaranPdf(data, photoB64);
     const subject = `📥 Entrada de palets · ${data.numero_interno} · ${data.proveedor}`;
     const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Se ha registrado una nueva entrada de palets:</p>
@@ -3000,7 +3072,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
   ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
-<p>Adjunto la foto del albarán original. Los datos del transporte y la firma del chófer se envían a continuación.</p>
+<p>Adjunto el albarán del proveedor en PDF. Los datos del transporte y la firma del chófer se envían a continuación.</p>
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
 <p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
 </body></html>`;
@@ -3017,9 +3089,9 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
         bodyHtml,
         attachments: [
           {
-            filename: `albaran_${data.numero_interno}.jpg`,
-            contentType: "image/jpeg",
-            contentBase64: photoB64,
+            filename: `albaran_entrada_${data.numero_interno}.pdf`,
+            contentType: "application/pdf",
+            contentBase64: pdfB64,
           },
         ],
       }),
@@ -3045,7 +3117,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
         foto_albaran: photoB64 || null,
         fecha: new Date().toISOString().slice(0, 10),
         transportista: data.transportista || null,
-        transportista_cif: data.transportista_cif || null,
+        ciudad_carga: data.ciudad_carga || null,
         matricula: data.matricula || null,
         chofer_nombre: data.chofer_nombre || null,
         chofer_firma: data.chofer_firma || null,
@@ -3063,6 +3135,10 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
       // Segundo email: datos del transporte + firma inline
       const firmaB64 = data.chofer_firma.replace(/^data:image\/png;base64,/, "");
       const subject = `✅ Entrada de palets confirmada · ${data.numero_interno} · ${data.proveedor}`;
+      // Los datos de "empresa que carga" (proveedor + ciudad de
+      // carga) sólo aparecen en los correos internos. Más
+      // adelante, cuando configures el correo del proveedor, esos
+      // dos campos se omitirán de su copia.
       const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Entrada confirmada con los datos del transporte y la firma del chófer:</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
@@ -3070,6 +3146,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
   ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
   ${data.transportista ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Empresa transportista</td><td><strong>${data.transportista}</strong></td></tr>` : ""}
+  ${data.ciudad_carga ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Ciudad de carga</td><td><strong>${data.ciudad_carga}</strong></td></tr>` : ""}
   ${data.matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Matrícula camión</td><td><strong>${data.matricula}</strong></td></tr>` : ""}
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
@@ -3352,7 +3429,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
           Rellena los datos del transporte y la firma del chófer.
         </div>
         <div style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <label style={labelStyle}>Empresa transportista</label>
               <input
@@ -3363,12 +3440,12 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
               />
             </div>
             <div>
-              <label style={labelStyle}>CIF transportista</label>
+              <label style={labelStyle}>Ciudad de carga</label>
               <input
-                value={data.transportista_cif}
-                onChange={(e) => setF("transportista_cif", e.target.value)}
+                value={data.ciudad_carga}
+                onChange={(e) => setF("ciudad_carga", e.target.value)}
                 style={inp}
-                placeholder="opcional"
+                placeholder="ej. Valencia"
               />
             </div>
           </div>
