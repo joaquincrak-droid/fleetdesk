@@ -3061,33 +3061,60 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
   return dataUri.split(",")[1];
 }
 
-// Calcula el siguiente número correlativo interno (E-AAAA-NNNN)
-// mirando el último que haya en palet_entries para el año actual.
-async function nextEntryNumber(token) {
+// Calcula el siguiente código de documento "E-N-AAAA" compartido
+// entre las descargas (palet_entries.numero_interno) y las
+// recogidas de palets (tasks.di_number con type=recogida +
+// subtype=palets). Así no hay duplicados entre las dos listas.
+//
+// startFrom: el admin puede fijar desde qué número arrancar
+// (settings.entry_counter_start). Si lo deja en 1, los códigos
+// son E-1-AAAA, E-2-AAAA, … Si lo cambia a 50, el siguiente
+// código será E-50-AAAA si no hay ninguno mayor.
+async function nextDocCode(token, startFrom = 1) {
   const year = new Date().getFullYear();
-  const prefix = `E-${year}-`;
+  let max = Math.max(0, (parseInt(startFrom, 10) || 1) - 1);
+
+  // Descargas (palet_entries)
   try {
-    const rows = await sbFetch(
-      `palet_entries?numero_interno=like.${encodeURIComponent(prefix)}*&select=numero_interno&order=numero_interno.desc&limit=20`,
+    const e = await sbFetch(
+      `palet_entries?numero_interno=like.E-*-${year}&select=numero_interno`,
       {},
       token,
     );
-    let max = 0;
-    for (const r of rows || []) {
-      const m = (r.numero_interno || "").match(/-(\d+)$/);
-      if (m) {
+    for (const r of e || []) {
+      const m = (r.numero_interno || "").match(/^E-(\d+)-(\d+)$/);
+      if (m && parseInt(m[2], 10) === year) {
         const n = parseInt(m[1], 10);
-        if (!isNaN(n) && n > max) max = n;
+        if (n > max) max = n;
       }
     }
-    return `${prefix}${String(max + 1).padStart(4, "0")}`;
-  } catch {
-    return `${prefix}0001`;
+  } catch (_e) {
+    // ignoramos: si falla la consulta, usamos el start
   }
+
+  // Recogidas de palets (tasks.di_number)
+  try {
+    const t = await sbFetch(
+      `tasks?di_number=like.E-*-${year}&select=di_number`,
+      {},
+      token,
+    );
+    for (const r of t || []) {
+      const m = (r.di_number || "").match(/^E-(\d+)-(\d+)$/);
+      if (m && parseInt(m[2], 10) === year) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    }
+  } catch (_e) {
+    // ignoramos
+  }
+
+  return `E-${max + 1}-${year}`;
 }
 
 // ── Asistente 3 pasos para nueva entrada de palets ─────────
-function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
+function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, onSaved }) {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -3128,7 +3155,7 @@ function PaletEntryWizard({ token, operators = [], onClose, onSaved }) {
 
   // Calcular nº interno al abrir el asistente
   useEffect(() => {
-    nextEntryNumber(token).then((n) => setF("numero_interno", n));
+    nextDocCode(token, counterStart).then((n) => setF("numero_interno", n));
   }, []);
 
   // Step 2: cámara
@@ -3729,7 +3756,7 @@ ${cleanArticulos.length ? `<p><strong>Artículos recibidos:</strong></p>
 // como la sección principal cuando el admin elige "Recogidas"
 // en la cabecera. Comparte la misma lógica que la modal pero sin
 // el overlay fijo.
-function PaletEntriesInline({ token, operators = [] }) {
+function PaletEntriesInline({ token, operators = [], counterStart = 1 }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -3917,6 +3944,7 @@ function PaletEntriesInline({ token, operators = [] }) {
         <PaletEntryWizard
           token={token}
           operators={operators}
+          counterStart={counterStart}
           onClose={() => setShowWizard(false)}
           onSaved={() => { setShowWizard(false); load(); }}
         />
@@ -4009,6 +4037,7 @@ function PaletEntriesListModal({ token, operators = [], onClose }) {
       <PaletEntryWizard
         token={token}
         operators={operators}
+        counterStart={1}
         onClose={() => setShowWizard(false)}
         onSaved={() => {
           setShowWizard(false);
@@ -4957,6 +4986,7 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
     email: settings?.email || "",
     nima: settings?.nima || "",
     autorizacion: settings?.autorizacion || "",
+    entry_counter_start: settings?.entry_counter_start ?? 1,
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const [saved, setSaved] = useState(false);
@@ -5060,6 +5090,29 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
               placeholder="T-000XXX"
               disabled={!isAdmin}
             />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 6, paddingTop: 12, borderTop: "1px dashed #1E2D3D" }}>
+          <label style={labelStyle}>
+            Empezar contador de descargas y recogidas de palets desde
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={form.entry_counter_start}
+            onChange={(e) => set("entry_counter_start", e.target.value)}
+            style={{ ...inp, maxWidth: 180 }}
+            placeholder="1"
+            disabled={!isAdmin}
+          />
+          <div style={{ fontSize: 11, color: "#64748B", marginTop: 6, lineHeight: 1.4 }}>
+            Los códigos tienen formato <code style={{ color: "#94A3B8" }}>E-N-AAAA</code>.
+            Se comparten entre las descargas y las recogidas de palets, así no hay
+            duplicados. Si pones <strong>1</strong> los códigos arrancan en
+            E-1-{new Date().getFullYear()}. Si pones <strong>50</strong>, el siguiente
+            empezará en E-50-{new Date().getFullYear()}. Si borras el último documento,
+            su número queda libre y el próximo lo reutiliza automáticamente.
           </div>
         </div>
 
@@ -5330,9 +5383,17 @@ export default function App() {
         "email",
         "nima",
         "autorizacion",
+        "entry_counter_start",
       ];
       const clean = {};
-      for (const k of ALLOWED) clean[k] = data[k] ?? null;
+      for (const k of ALLOWED) {
+        if (k === "entry_counter_start") {
+          const n = parseInt(data[k], 10);
+          clean[k] = Number.isFinite(n) && n > 0 ? n : 1;
+        } else {
+          clean[k] = data[k] ?? null;
+        }
+      }
       // upsert vía PATCH (la fila ya existe con id=1 por la migración)
       await sbFetch(
         "settings?id=eq.1",
@@ -5472,6 +5533,16 @@ export default function App() {
         if (!ok) {
           const di = await nextDiNumber(nima);
           if (di) form.di_number = di;
+        }
+      }
+
+      // Para recogidas de PALETS, asignamos un código correlativo
+      // compartido con las descargas (E-N-AAAA).
+      if (form.type === "recogida" && form.subtype === "palets" && !form.id) {
+        const cur = form.di_number || "";
+        if (!/^E-\d+-\d+$/.test(cur)) {
+          const code = await nextDocCode(token, settings?.entry_counter_start || 1);
+          if (code) form.di_number = code;
         }
       }
 
@@ -7067,6 +7138,7 @@ export default function App() {
           <PaletEntriesInline
             token={token}
             operators={operators}
+            counterStart={settings?.entry_counter_start || 1}
           />
         )}
       </div>
