@@ -756,7 +756,7 @@ async function generateDIR(task, settings, truck, opts = {}) {
     nif: emisor.cif || "B73384059",
     razon: emisor.razon_social || "RECIPALETS TOTANA S.L.",
     nima: emisor.nima || "3020143940",
-    inscripcion: emisor.autorizacion || "AAS20250026",
+    inscripcion: emisor.autorizacion || "GOR20230019",
     tipoGestor: "G04",
     direccion: emisor.domicilio || "CALLE NARANJO Nº 6",
     cp: "30850",
@@ -4444,6 +4444,250 @@ function compressImage(file, maxW = 1280, quality = 0.85) {
   });
 }
 
+// Modal a pantalla completa para introducir los artículos de
+// una recogida de palets antes de hacer la foto del albarán.
+function PaletCompleteModal({ task, onClose, onAccept }) {
+  const initialItems = Array.isArray(task.articulos) && task.articulos.length
+    ? task.articulos.map((a) => ({
+        descripcion: a.descripcion || "",
+        cantidad: a.cantidad == null ? "" : String(a.cantidad),
+      }))
+    : [{ descripcion: "", cantidad: "" }];
+  const [items, setItems] = useState(initialItems);
+  const [error, setError] = useState("");
+
+  const total = items.reduce((s, a) => {
+    const n = parseInt(a.cantidad, 10);
+    return s + (Number.isFinite(n) ? n : 0);
+  }, 0);
+
+  const addRow = () =>
+    setItems((arr) => [...arr, { descripcion: "", cantidad: "" }]);
+  const setRow = (i, k, v) =>
+    setItems((arr) => arr.map((a, idx) => (idx === i ? { ...a, [k]: v } : a)));
+  const delRow = (i) =>
+    setItems((arr) => (arr.length === 1 ? arr : arr.filter((_, idx) => idx !== i)));
+
+  const cliente = task.origin_name || task.client || "Sin cliente";
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "#060D1A",
+        zIndex: 240, display: "flex", flexDirection: "column",
+        overflowY: "auto",
+      }}
+    >
+      <div
+        style={{
+          background: "#0A1628", borderBottom: "1px solid #1E2D3D",
+          padding: "16px", position: "sticky", top: 0, zIndex: 10,
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0" }}>
+          📦 Completar recogida de palets
+        </div>
+        <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
+          {cliente}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, padding: "16px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+        <p style={{ color: "#94A3B8", fontSize: 13, margin: "0 0 14px" }}>
+          Indica los artículos recogidos. Puedes añadir tantas líneas como necesites.
+          Al continuar, se hará la foto del albarán firmado.
+        </p>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          {items.map((a, idx) => (
+            <div
+              key={idx}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "2fr 1fr auto",
+                gap: 8,
+                alignItems: "end",
+                padding: "10px 12px",
+                background: "#0A1628",
+                border: "1px solid #1E2D3D",
+                borderRadius: 10,
+              }}
+            >
+              <div>
+                <label style={{ ...labelStyle, fontSize: 10 }}>Artículo</label>
+                <input
+                  value={a.descripcion}
+                  onChange={(e) => setRow(idx, "descripcion", e.target.value)}
+                  style={{ ...inp, fontSize: 13, padding: "9px 11px" }}
+                  placeholder="ej. Europalet usado"
+                />
+              </div>
+              <div>
+                <label style={{ ...labelStyle, fontSize: 10 }}>Cantidad</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="900"
+                  value={a.cantidad}
+                  onChange={(e) => setRow(idx, "cantidad", e.target.value)}
+                  style={{ ...inp, fontSize: 13, padding: "9px 11px" }}
+                  placeholder="50"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => delRow(idx)}
+                disabled={items.length === 1}
+                title="Eliminar línea"
+                style={{
+                  padding: "9px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #7F1D1D",
+                  background: "transparent",
+                  color: items.length === 1 ? "#475569" : "#F87171",
+                  cursor: items.length === 1 ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={addRow}
+          style={{
+            marginTop: 12,
+            padding: "11px 16px",
+            borderRadius: 10,
+            border: "1px dashed #4F46E5",
+            background: "rgba(79,70,229,0.10)",
+            color: "#A5B4FC",
+            cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 13,
+            width: "100%",
+          }}
+        >
+          + Añadir artículo
+        </button>
+
+        <div
+          style={{
+            marginTop: 18,
+            padding: "14px 16px",
+            background: "linear-gradient(135deg,rgba(79,70,229,0.18),rgba(124,58,237,0.10))",
+            border: "1px solid #4F46E5",
+            borderRadius: 12,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ color: "#94A3B8", fontSize: 13 }}>Total palets:</div>
+          <div style={{ color: "#F1F5F9", fontSize: 22, fontWeight: 800 }}>
+            {total}
+          </div>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: "11px 14px",
+              borderRadius: 10,
+              background: "rgba(248,113,113,0.12)",
+              color: "#F87171",
+              fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          padding: "12px 16px",
+          borderTop: "1px solid #1E2D3D",
+          background: "#0A1628",
+          display: "flex",
+          gap: 10,
+          justifyContent: "space-between",
+          position: "sticky",
+          bottom: 0,
+        }}
+      >
+        <button
+          onClick={onClose}
+          style={{
+            padding: "12px 18px",
+            borderRadius: 10,
+            border: "1px solid #1E2D3D",
+            background: "transparent",
+            color: "#94A3B8",
+            cursor: "pointer",
+            fontWeight: 600,
+            fontSize: 14,
+          }}
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={() => {
+            // Validación
+            const valid = items
+              .map((a) => ({
+                descripcion: (a.descripcion || "").trim(),
+                cantidad: parseInt(a.cantidad, 10),
+              }))
+              .filter((a) => a.descripcion || Number.isFinite(a.cantidad));
+            if (valid.length === 0) {
+              setError("Añade al menos un artículo con cantidad.");
+              return;
+            }
+            for (const a of valid) {
+              if (!a.descripcion) {
+                setError("Hay un artículo sin descripción. Rellénalo o elimínalo.");
+                return;
+              }
+              if (!Number.isFinite(a.cantidad) || a.cantidad <= 0) {
+                setError(`La cantidad de "${a.descripcion}" debe ser un número mayor que 0.`);
+                return;
+              }
+              if (a.cantidad > 900) {
+                setError(`La cantidad de "${a.descripcion}" es muy alta (máx. 900 por línea).`);
+                return;
+              }
+            }
+            const tot = valid.reduce((s, a) => s + a.cantidad, 0);
+            if (tot > 900) {
+              setError(`El total de palets (${tot}) supera el máximo de 900.`);
+              return;
+            }
+            setError("");
+            onAccept(valid, tot);
+          }}
+          style={{
+            padding: "12px 22px",
+            borderRadius: 10,
+            border: "none",
+            background: "linear-gradient(135deg,#10B981,#059669)",
+            color: "#fff",
+            cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 14,
+          }}
+        >
+          Continuar → 📷
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PhotoCaptureModal({ task, truck, onClose, onAccept, sending = false, error = "" }) {
   const [preview, setPreview] = useState(null);
   const [base64, setBase64] = useState(null);
@@ -5194,6 +5438,7 @@ export default function App() {
   const [showUsers, setShowUsers] = useState(false);
   const [showEntradas, setShowEntradas] = useState(false);
   const [photoTask, setPhotoTask] = useState(null);    // tarea pendiente de foto albarán
+  const [paletCompleteTask, setPaletCompleteTask] = useState(null); // tarea palets pendiente de artículos
   const [photoSending, setPhotoSending] = useState(false);
   const [photoError, setPhotoError] = useState("");
 
@@ -5492,6 +5737,7 @@ export default function App() {
         "order_number",
         "position",
         "notes",
+        "articulos",
       ];
       // Campos DAT: solo se mandan si tienen valor, para no romper
       // cuando la BD aún no tiene esas columnas.
@@ -5915,51 +6161,12 @@ export default function App() {
       setPhotoTask({ ...task, status: "completado" });
       return;
     }
-    // Recogida de palets: pedimos la cantidad total antes de pasar
-    // a la foto del albarán.
+    // Recogida de palets: abre el modal a pantalla completa para
+    // que el chófer indique los artículos uno a uno (descripción +
+    // cantidad). Al confirmar, se guarda en la tarea y se pasa a
+    // la foto del albarán.
     if (task.type === "recogida" && task.subtype === "palets") {
-      const initial = (task.quantity || "").toString();
-      const input = window.prompt(
-        "Introduce la cantidad total de palets recogidos (máx. 900):",
-        initial,
-      );
-      if (input === null) return;            // cancelado
-      const cant = input.toString().trim();
-      if (!cant) {
-        alert("Tienes que introducir la cantidad total de palets.");
-        return;
-      }
-      // Sólo aceptamos enteros entre 1 y 900 — más de 900 no entra
-      // en un camión, así que casi seguro es un error de tecleo.
-      const num = parseInt(cant, 10);
-      if (!Number.isFinite(num) || num <= 0) {
-        alert("La cantidad debe ser un número entero mayor que 0.");
-        return;
-      }
-      if (num > 900) {
-        alert("La cantidad máxima permitida es 900 palets. Revisa el valor.");
-        return;
-      }
-      try {
-        await sbFetch(
-          `tasks?id=eq.${task.id}`,
-          {
-            method: "PATCH",
-            body: JSON.stringify({ quantity: cant }),
-            headers: { Prefer: "return=minimal" },
-          },
-          token,
-        );
-        setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, quantity: cant } : t)),
-        );
-        task = { ...task, quantity: cant };
-      } catch (e) {
-        setError("No se pudo guardar la cantidad: " + (e.message || e));
-        return;
-      }
-      setPhotoError("");
-      setPhotoTask(task);
+      setPaletCompleteTask(task);
       return;
     }
 
@@ -5972,6 +6179,38 @@ export default function App() {
 
     // Resto (raros): completar directo.
     markComplete(task.id);
+  };
+
+  // Tras pulsar Continuar en el modal de palets: guarda los
+  // artículos + total en la tarea y pasa a la foto del albarán.
+  const handlePaletCompleteAccept = async (items, totalQty) => {
+    if (!paletCompleteTask) return;
+    const task = paletCompleteTask;
+    try {
+      await sbFetch(
+        `tasks?id=eq.${task.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            articulos: items,
+            quantity: String(totalQty),
+          }),
+          headers: { Prefer: "return=minimal" },
+        },
+        token,
+      );
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, articulos: items, quantity: String(totalQty) } : t,
+        ),
+      );
+      const updated = { ...task, articulos: items, quantity: String(totalQty) };
+      setPaletCompleteTask(null);
+      setPhotoError("");
+      setPhotoTask(updated);
+    } catch (e) {
+      setError("No se pudo guardar los artículos: " + (e.message || e));
+    }
   };
 
   const handlePhotoAccept = async (base64, customName = "") => {
@@ -7223,6 +7462,13 @@ export default function App() {
           token={token}
           operators={operators}
           onClose={() => setShowEntradas(false)}
+        />
+      )}
+      {paletCompleteTask && (
+        <PaletCompleteModal
+          task={paletCompleteTask}
+          onClose={() => setPaletCompleteTask(null)}
+          onAccept={handlePaletCompleteAccept}
         />
       )}
       {photoTask && (
