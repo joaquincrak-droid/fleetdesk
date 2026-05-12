@@ -5920,13 +5920,24 @@ export default function App() {
     if (task.type === "recogida" && task.subtype === "palets") {
       const initial = (task.quantity || "").toString();
       const input = window.prompt(
-        "Introduce la cantidad total de palets recogidos:",
+        "Introduce la cantidad total de palets recogidos (máx. 900):",
         initial,
       );
       if (input === null) return;            // cancelado
       const cant = input.toString().trim();
       if (!cant) {
         alert("Tienes que introducir la cantidad total de palets.");
+        return;
+      }
+      // Sólo aceptamos enteros entre 1 y 900 — más de 900 no entra
+      // en un camión, así que casi seguro es un error de tecleo.
+      const num = parseInt(cant, 10);
+      if (!Number.isFinite(num) || num <= 0) {
+        alert("La cantidad debe ser un número entero mayor que 0.");
+        return;
+      }
+      if (num > 900) {
+        alert("La cantidad máxima permitida es 900 palets. Revisa el valor.");
         return;
       }
       try {
