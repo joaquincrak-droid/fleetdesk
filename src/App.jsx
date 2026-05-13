@@ -69,6 +69,7 @@ const SUPABASE_KEY =
 const PALET_ARTICLES_RECOGIDAS = [
   { code: "R1",  name: "RECOGIDA PALETS DE DESECHO EUROPEOS" },
   { code: "R2",  name: "RECOGIDA PALETS DE DESECHO NORMALES" },
+  { code: "R3",  name: "EUROWEBER" },
   { code: "015", name: "PALET 110 X 130 CP7" },
   { code: "003", name: "PALET 80 X 120 FUERTE" },
   { code: "006", name: "PALET 100 X 120 FUERTE ABIERTO" },
@@ -4685,7 +4686,7 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
           Indica los artículos {isResiduos ? "recogidos para reciclar" : "recogidos"}.
           Puedes añadir tantas líneas como necesites.
           {isResiduos
-            ? " Después se enviará automáticamente el DIR al cliente."
+            ? " Después se enviará automáticamente el DIR al cliente y se hará la foto del albarán."
             : " Al continuar, se hará la foto del albarán firmado."}
         </p>
 
@@ -4913,7 +4914,7 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
             fontSize: 14,
           }}
         >
-          {isResiduos ? "✓ Completar y enviar DIR" : "Continuar → 📷"}
+          {isResiduos ? "Continuar → DIR + 📷" : "Continuar → 📷"}
         </button>
       </div>
     </div>
@@ -6444,8 +6445,12 @@ export default function App() {
       const updated = { ...task, articulos: items, quantity: quantityValue };
       setPaletCompleteTask(null);
       if (isResiduos) {
-        // Marcamos completada + DIR automático. No abrimos cámara.
+        // Marcamos completada + DIR automático y luego abrimos
+        // la cámara para que el chófer fotografíe también el
+        // albarán de la recogida (queda como justificante).
         await markComplete(task.id, updated);
+        setPhotoError("");
+        setPhotoTask({ ...updated, status: "completado" });
       } else {
         // Palets: pasamos al modal de foto del albarán
         setPhotoError("");
