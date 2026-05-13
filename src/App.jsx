@@ -63,17 +63,50 @@ async function enablePushNotifications(token, userId) {
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
 
-// Catálogo de artículos predefinidos para Descargas y Recogidas
-// de palets. El usuario selecciona el artículo del desplegable y
-// sólo escribe la cantidad. Si en el futuro hay que añadir más
-// modelos, simplemente se editan estos campos.
-const PALET_ARTICLES = [
+// Catálogo de artículos para RECOGIDAS (tanto de palets como de
+// residuos). Es la lista corta: R1/R2 para desecho y los modelos
+// más habituales que cargamos en cliente.
+const PALET_ARTICLES_RECOGIDAS = [
   { code: "R1",  name: "RECOGIDA PALETS DE DESECHO EUROPEOS" },
   { code: "R2",  name: "RECOGIDA PALETS DE DESECHO NORMALES" },
-  { code: "015", name: "110X130 CP7" },
-  { code: "003", name: "PALETS 80X120 FUERTE" },
-  { code: "006", name: "PALETS 100X120 FUERTE" },
+  { code: "015", name: "PALET 110 X 130 CP7" },
+  { code: "003", name: "PALET 80 X 120 FUERTE" },
+  { code: "006", name: "PALET 100 X 120 FUERTE ABIERTO" },
 ];
+
+// Catálogo extenso de artículos para DESCARGAS — todos los
+// modelos que pueden entrar en nuestras instalaciones desde
+// proveedores.
+const PALET_ARTICLES_DESCARGAS = [
+  { code: "001", name: "PALET EUROPEO BLANCO" },
+  { code: "002", name: "PALET EUROPEO" },
+  { code: "003", name: "PALET 80 X 120 FUERTE" },
+  { code: "004", name: "PALET 80 X 120 FINO" },
+  { code: "005", name: "PALET 80 X 120 ESPECIALES" },
+  { code: "006", name: "PALET 100 X 120 FUERTE ABIERTO" },
+  { code: "007", name: "PALET 100 X 120 FUERTE PERIMÉTRICO" },
+  { code: "008", name: "PALET 100 X 120 7 TABLAS" },
+  { code: "009", name: "PALET 100 X 120 9 TABLAS" },
+  { code: "010", name: "PALET 100 X 120 FINO PERIMÉTRICO" },
+  { code: "011", name: "PALET 100 X 120 CP1" },
+  { code: "012", name: "PALET 100 X 120 LISTONES" },
+  { code: "013", name: "PALET 114 X 114 CP3" },
+  { code: "014", name: "PALET 100 X 120 CP6" },
+  { code: "015", name: "PALET 110 X 130 CP7" },
+  { code: "016", name: "PALET 114 X 114 CP9" },
+  { code: "017", name: "PALET 60 X 80" },
+  { code: "018", name: "PALET 110 X 110" },
+  { code: "021", name: "PALET 110 X 130" },
+  { code: "022", name: "PALET 110 X 110 LISTONES" },
+  { code: "023", name: "PALET 100 X 100" },
+  { code: "024", name: "PALET 120 X 120" },
+  { code: "025", name: "PALET 115 X 115" },
+  { code: "026", name: "PALETS 100 X 100 LISTONES" },
+  { code: "R3",  name: "EUROWEBER" },
+];
+
+// Alias por compatibilidad con código antiguo
+const PALET_ARTICLES = PALET_ARTICLES_RECOGIDAS;
 
 // Camiones de la flota. La matrícula aparece en el PDF del albarán
 // y en el cuerpo del correo. El color se usa para distinguir a cada
@@ -3385,7 +3418,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
       const cleanArticulos = (data.articulos || [])
         .filter((a) => a.code || a.cantidad)
         .map((a) => {
-          const found = PALET_ARTICLES.find((p) => p.code === a.code);
+          const found = PALET_ARTICLES_DESCARGAS.find((p) => p.code === a.code);
           return {
             code: a.code || "",
             name: a.name || found?.name || "",
@@ -3425,39 +3458,26 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
         (s, a) => s + (Number.isFinite(a.cantidad) ? a.cantidad : 0),
         0,
       );
-      const subject = `✅ Entrada de palets confirmada · ${data.numero_interno} · ${data.proveedor}`;
+      // El email a transportes lleva SÓLO la información del paso 3
+      // del asistente: empresa transportista, ciudad de carga,
+      // matrícula, chófer y firma. NO se incluyen los datos
+      // internos del proveedor, ni el albarán, ni el desglose
+      // de artículos — esa información se queda en la BBDD para
+      // los demás correos.
+      const subject = `✅ Transporte registrado · ${data.numero_interno}`;
       const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
-<p>Entrada confirmada con los datos del transporte${hasFirma ? " y la firma del chófer" : ""}:</p>
+<p>Datos del transporte registrados${hasFirma ? " con la firma del chófer" : ""}:</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
-  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº interno</td><td><strong>${data.numero_interno}</strong></td></tr>
-  <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
-  ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
-  ${totalPalets ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Total palets</td><td><strong>${totalPalets}</strong></td></tr>` : ""}
   ${data.transportista ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Empresa transportista</td><td><strong>${data.transportista}</strong></td></tr>` : ""}
   ${data.ciudad_carga ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Ciudad de carga</td><td><strong>${data.ciudad_carga}</strong></td></tr>` : ""}
   ${data.matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Matrícula camión</td><td><strong>${data.matricula}</strong></td></tr>` : ""}
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
-${cleanArticulos.length ? `<p><strong>Desglose de palets por modelo:</strong></p>
-<table cellpadding="4" cellspacing="0" style="border-collapse:collapse;margin:6px 0 14px 0;border:1px solid #ccc;">
-  <tr style="background:#f3f4f6;">
-    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Artículo</th>
-    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Cantidad</th>
-  </tr>
-  ${cleanArticulos.map((a) => `<tr>
-    <td style="padding:5px;border:1px solid #ccc;">${a.code ? `${a.code} · ` : ""}${a.name || "—"}</td>
-    <td style="padding:5px;border:1px solid #ccc;">${a.cantidad ?? "—"}</td>
-  </tr>`).join("")}
-  <tr style="background:#f3f4f6;">
-    <td style="padding:5px;border:1px solid #ccc;text-align:right;font-weight:700;">TOTAL</td>
-    <td style="padding:5px;border:1px solid #ccc;font-weight:700;">${totalPalets} palets</td>
-  </tr>
-</table>` : ""}
 ${hasFirma
     ? `<p><strong>Firma del chófer:</strong></p>
 <img src="cid:firma" alt="firma" style="border:1px solid #ccc;background:#fff;padding:6px;max-width:360px;display:block;" />`
-    : `<p style="color:#92400E;background:#FEF3C7;padding:8px 12px;border-radius:6px;display:inline-block;"><strong>⚠ Entrada sin firma del chófer.</strong></p>`}
+    : `<p style="color:#92400E;background:#FEF3C7;padding:8px 12px;border-radius:6px;display:inline-block;"><strong>⚠ Sin firma del chófer.</strong></p>`}
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
 <p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
 </body></html>`;
@@ -3629,14 +3649,14 @@ ${hasFirma
                     value={a.code || ""}
                     onChange={(e) => {
                       const code = e.target.value;
-                      const found = PALET_ARTICLES.find((p) => p.code === code);
+                      const found = PALET_ARTICLES_DESCARGAS.find((p) => p.code === code);
                       setArticulo(idx, "code", code);
                       setArticulo(idx, "name", found?.name || "");
                     }}
                     style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
                   >
                     <option value="">— Selecciona artículo —</option>
-                    {PALET_ARTICLES.map((p) => (
+                    {PALET_ARTICLES_DESCARGAS.map((p) => (
                       <option key={p.code} value={p.code}>
                         {p.code} · {p.name}
                       </option>
@@ -4605,6 +4625,10 @@ function compressImage(file, maxW = 1280, quality = 0.85) {
 // Modal a pantalla completa para introducir los artículos de
 // una recogida de palets antes de hacer la foto del albarán.
 function PaletCompleteModal({ task, onClose, onAccept }) {
+  // ¿Es una recogida de residuos? Si lo es, pedimos también los
+  // kg netos (campo obligatorio del DIR).
+  const isResiduos =
+    task.type === "recogida" && task.subtype !== "palets";
   const initialItems = Array.isArray(task.articulos) && task.articulos.length
     ? task.articulos.map((a) => ({
         code: a.code || "",
@@ -4613,6 +4637,9 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
       }))
     : [{ code: "", name: "", cantidad: "" }];
   const [items, setItems] = useState(initialItems);
+  const [kgNetos, setKgNetos] = useState(
+    isResiduos && task.quantity ? String(task.quantity) : "",
+  );
   const [error, setError] = useState("");
 
   const total = items.reduce((s, a) => {
@@ -4644,7 +4671,9 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
         }}
       >
         <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0" }}>
-          📦 Completar recogida de palets
+          {isResiduos
+            ? "♻ Completar recogida de residuos"
+            : "📦 Completar recogida de palets"}
         </div>
         <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
           {cliente}
@@ -4653,8 +4682,11 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
 
       <div style={{ flex: 1, padding: "16px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
         <p style={{ color: "#94A3B8", fontSize: 13, margin: "0 0 14px" }}>
-          Indica los artículos recogidos. Puedes añadir tantas líneas como necesites.
-          Al continuar, se hará la foto del albarán firmado.
+          Indica los artículos {isResiduos ? "recogidos para reciclar" : "recogidos"}.
+          Puedes añadir tantas líneas como necesites.
+          {isResiduos
+            ? " Después se enviará automáticamente el DIR al cliente."
+            : " Al continuar, se hará la foto del albarán firmado."}
         </p>
 
         <div style={{ display: "grid", gap: 10 }}>
@@ -4762,6 +4794,22 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
           </div>
         </div>
 
+        {isResiduos && (
+          <div style={{ marginTop: 14 }}>
+            <label style={{ ...labelStyle, color: "#F59E0B" }}>
+              Kg netos recogidos (obligatorio para el DIR)
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={kgNetos}
+              onChange={(e) => setKgNetos(e.target.value)}
+              placeholder="ej. 3580"
+              style={{ ...inp, fontSize: 15 }}
+            />
+          </div>
+        )}
+
         {error && (
           <div
             style={{
@@ -4810,7 +4858,7 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
             // Validación
             const valid = items
               .map((a) => {
-                const found = PALET_ARTICLES.find((p) => p.code === a.code);
+                const found = PALET_ARTICLES_RECOGIDAS.find((p) => p.code === a.code);
                 return {
                   code: a.code || "",
                   name: a.name || found?.name || "",
@@ -4841,8 +4889,18 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
               setError(`El total de palets (${tot}) supera el máximo de 900.`);
               return;
             }
+            // En residuos, los kg netos son obligatorios (van al DIR)
+            let kg = null;
+            if (isResiduos) {
+              const k = parseInt(kgNetos, 10);
+              if (!Number.isFinite(k) || k <= 0) {
+                setError("Tienes que indicar los kg netos para el DIR.");
+                return;
+              }
+              kg = k;
+            }
             setError("");
-            onAccept(valid, tot);
+            onAccept(valid, tot, kg);
           }}
           style={{
             padding: "12px 22px",
@@ -4855,7 +4913,7 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
             fontSize: 14,
           }}
         >
-          Continuar → 📷
+          {isResiduos ? "✓ Completar y enviar DIR" : "Continuar → 📷"}
         </button>
       </div>
     </div>
@@ -6330,62 +6388,10 @@ export default function App() {
   // aceptar la foto. Para recogidas de residuos no hace falta foto
   // (ya tienen el DIR), pero pide los kilos antes de completar.
   const handleCompleteTask = async (task) => {
-    const isResiduos =
-      task.type === "recogida" && task.subtype !== "palets";
-    if (isResiduos) {
-      // Pedimos al chófer/admin los kg netos. Pre-rellenamos con la
-      // cantidad que ya tuviera la tarea (si la había). Cancelar
-      // aborta la operación; aceptar guarda los kg y completa.
-      const initial = (task.quantity || "").toString();
-      const input = window.prompt(
-        "Introduce los kg netos de la recogida (obligatorio para el DIR):",
-        initial,
-      );
-      if (input === null) return;            // cancelado
-      const kgs = input.toString().trim();
-      if (!kgs) {
-        alert("Tienes que introducir un valor en kg para completar la recogida.");
-        return;
-      }
-      // Guardamos los kg en la tarea antes de completarla
-      try {
-        await sbFetch(
-          `tasks?id=eq.${task.id}`,
-          {
-            method: "PATCH",
-            body: JSON.stringify({ quantity: kgs }),
-            headers: { Prefer: "return=minimal" },
-          },
-          token,
-        );
-        // Actualizamos la copia local para que el envío del DIR
-        // y el resto de la lógica usen ya los kg correctos.
-        setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, quantity: kgs } : t)),
-        );
-        task = { ...task, quantity: kgs };
-      } catch (e) {
-        setError("No se pudo guardar la cantidad: " + (e.message || e));
-        return;
-      }
-      // Una vez guardados los kg, marcamos como completada (esto a
-      // su vez dispara el envío automático del DIR). Le pasamos la
-      // tarea con los kg actualizados como override para que el
-      // DIR salga con la cantidad correcta sin esperar a que el
-      // estado de React se refresque.
-      await markComplete(task.id, task);
-      // Justo después abrimos la cámara para que el chófer haga
-      // foto del albarán de recogida. Lo marcamos como completado
-      // ya, así handlePhotoAccept no vuelve a llamar a markComplete.
-      setPhotoError("");
-      setPhotoTask({ ...task, status: "completado" });
-      return;
-    }
-    // Recogida de palets: abre el modal a pantalla completa para
-    // que el chófer indique los artículos uno a uno (descripción +
-    // cantidad). Al confirmar, se guarda en la tarea y se pasa a
-    // la foto del albarán.
-    if (task.type === "recogida" && task.subtype === "palets") {
+    // Recogida (palets o residuos): abre el modal a pantalla
+    // completa con el desglose de artículos. Para residuos
+    // pedirá además los kg netos para el DIR.
+    if (task.type === "recogida") {
       setPaletCompleteTask(task);
       return;
     }
@@ -6401,11 +6407,20 @@ export default function App() {
     markComplete(task.id);
   };
 
-  // Tras pulsar Continuar en el modal de palets: guarda los
-  // artículos + total en la tarea y pasa a la foto del albarán.
-  const handlePaletCompleteAccept = async (items, totalQty) => {
+  // Tras pulsar el botón del modal de palets/residuos:
+  //   - Palets: guarda artículos + total, abre la cámara del albarán.
+  //   - Residuos: guarda artículos + kg netos, marca como
+  //     completada y dispara el envío del DIR (sin cámara).
+  const handlePaletCompleteAccept = async (items, totalQty, kgResiduos = null) => {
     if (!paletCompleteTask) return;
     const task = paletCompleteTask;
+    const isResiduos =
+      task.type === "recogida" && task.subtype !== "palets";
+    // Cantidad que se guarda en task.quantity: para palets, total
+    // de palets; para residuos, kg netos.
+    const quantityValue = isResiduos
+      ? String(kgResiduos)
+      : String(totalQty);
     try {
       await sbFetch(
         `tasks?id=eq.${task.id}`,
@@ -6413,7 +6428,7 @@ export default function App() {
           method: "PATCH",
           body: JSON.stringify({
             articulos: items,
-            quantity: String(totalQty),
+            quantity: quantityValue,
           }),
           headers: { Prefer: "return=minimal" },
         },
@@ -6421,13 +6436,21 @@ export default function App() {
       );
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === task.id ? { ...t, articulos: items, quantity: String(totalQty) } : t,
+          t.id === task.id
+            ? { ...t, articulos: items, quantity: quantityValue }
+            : t,
         ),
       );
-      const updated = { ...task, articulos: items, quantity: String(totalQty) };
+      const updated = { ...task, articulos: items, quantity: quantityValue };
       setPaletCompleteTask(null);
-      setPhotoError("");
-      setPhotoTask(updated);
+      if (isResiduos) {
+        // Marcamos completada + DIR automático. No abrimos cámara.
+        await markComplete(task.id, updated);
+      } else {
+        // Palets: pasamos al modal de foto del albarán
+        setPhotoError("");
+        setPhotoTask(updated);
+      }
     } catch (e) {
       setError("No se pudo guardar los artículos: " + (e.message || e));
     }
