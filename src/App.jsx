@@ -63,6 +63,18 @@ async function enablePushNotifications(token, userId) {
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impmenl1ZWlsaHJiemt2bGx5amZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNzgxOTksImV4cCI6MjA5MTg1NDE5OX0.sQms7Rbuv4d3WFQujtkE9KSvg7XBmCNrsp9TJS7Se7k";
 
+// Catálogo de artículos predefinidos para Descargas y Recogidas
+// de palets. El usuario selecciona el artículo del desplegable y
+// sólo escribe la cantidad. Si en el futuro hay que añadir más
+// modelos, simplemente se editan estos campos.
+const PALET_ARTICLES = [
+  { code: "R1",  name: "RECOGIDA PALETS DE DESECHO EUROPEOS" },
+  { code: "R2",  name: "RECOGIDA PALETS DE DESECHO NORMALES" },
+  { code: "015", name: "110X130 CP7" },
+  { code: "003", name: "PALETS 80X120 FUERTE" },
+  { code: "006", name: "PALETS 100X120 FUERTE" },
+];
+
 // Camiones de la flota. La matrícula aparece en el PDF del albarán
 // y en el cuerpo del correo. El color se usa para distinguir a cada
 // chófer visualmente en la lista de tareas. El "email" recibe una
@@ -352,6 +364,29 @@ function MiniMap({ lat, lng }) {
   );
 }
 
+// Convierte un "feature" de Photon en una cadena legible:
+// "Calle Mayor 5, 30001 Murcia, España"
+function formatPhotonAddress(f) {
+  if (!f?.properties) return "";
+  const p = f.properties;
+  const parts = [];
+  // Línea de calle
+  if (p.street) {
+    parts.push(`${p.street}${p.housenumber ? " " + p.housenumber : ""}`);
+  } else if (p.name && p.type !== "city" && p.type !== "locality") {
+    parts.push(p.name);
+  }
+  // Localidad + provincia + país
+  const ciudad = p.city || p.locality || p.town || p.village || p.name;
+  if (p.postcode && ciudad) parts.push(`${p.postcode} ${ciudad}`);
+  else if (ciudad) parts.push(ciudad);
+  if (p.state && !parts.some((s) => s.includes(p.state))) parts.push(p.state);
+  if (p.country && !parts.some((s) => s.toLowerCase().includes(p.country.toLowerCase()))) {
+    parts.push(p.country);
+  }
+  return parts.filter(Boolean).join(", ");
+}
+
 function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -359,6 +394,7 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
   const [leafletReady, setLeafletReady] = useState(!!window.L);
   const [search, setSearch] = useState(initialAddress || "");
   const [searching, setSearching] = useState(false);
+  const [suggestions, setSuggestions] = useState([]); // Lista de candidatos para escoger
   const [pickedAddress, setPickedAddress] = useState(initialAddress || "");
   const [pickedLat, setPickedLat] = useState(initialLat || null);
   const [pickedLng, setPickedLng] = useState(initialLng || null);
@@ -381,12 +417,15 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
       setPickedLat(la);
       setPickedLng(lo);
       try {
+        // Photon: mejor reverse geocoding para España que Nominatim
         const r = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${la}&lon=${lo}&format=json`
+          `https://photon.komoot.io/reverse?lon=${lo}&lat=${la}&lang=es`
         );
         const d = await r.json();
-        setPickedAddress(d.display_name || `${la.toFixed(5)}, ${lo.toFixed(5)}`);
-        setSearch(d.display_name || `${la.toFixed(5)}, ${lo.toFixed(5)}`);
+        const f = d.features?.[0];
+        const label = f ? formatPhotonAddress(f) : `${la.toFixed(5)}, ${lo.toFixed(5)}`;
+        setPickedAddress(label);
+        setSearch(label);
       } catch {
         setPickedAddress(`${la.toFixed(5)}, ${lo.toFixed(5)}`);
       }
@@ -415,10 +454,12 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
       const { lat, lng } = e.latlng;
       try {
         const r = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
+          `https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}&lang=es`
         );
         const d = await r.json();
-        placeMarker(lat, lng, d.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        const f = d.features?.[0];
+        const label = f ? formatPhotonAddress(f) : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        placeMarker(lat, lng, label);
       } catch {
         placeMarker(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
       }
@@ -431,19 +472,32 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
     if (!search.trim()) return;
     setSearching(true);
     setSearchError("");
+    setSuggestions([]);
     try {
+      // Photon: motor de búsqueda basado en OSM con mejor ranking
+      // que Nominatim para España. Filtramos por país=es.
       const r = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          search
-        )}&format=json&limit=1&countrycodes=es`
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(
+          search,
+        )}&lang=es&limit=8&bbox=-9.4,35.9,4.6,43.9`,
       );
       const d = await r.json();
-      if (!d.length) {
-        setSearchError("No encontrado. Prueba con más detalle.");
+      const list = (d.features || []).filter(
+        (f) => (f.properties?.countrycode || "ES").toUpperCase() === "ES",
+      );
+      if (!list.length) {
+        setSearchError("No encontrado. Prueba con más detalle (ej. añade municipio o código postal).");
         setSearching(false);
         return;
       }
-      placeMarker(parseFloat(d[0].lat), parseFloat(d[0].lon), d[0].display_name);
+      if (list.length === 1) {
+        const f = list[0];
+        const [lon, lat] = f.geometry.coordinates;
+        placeMarker(lat, lon, formatPhotonAddress(f));
+      } else {
+        // Mostramos lista para que el usuario elija el correcto
+        setSuggestions(list);
+      }
     } catch {
       setSearchError("Error de red.");
     }
@@ -501,8 +555,48 @@ function MapPicker({ initialAddress, initialLat, initialLng, onConfirm, onClose 
         {searchError && (
           <div style={{ color: "#F87171", fontSize: 12, marginBottom: 4 }}>{searchError}</div>
         )}
+        {suggestions.length > 0 && (
+          <div
+            style={{
+              marginTop: 6,
+              marginBottom: 6,
+              maxHeight: 220,
+              overflowY: "auto",
+              border: "1px solid #1E2D3D",
+              borderRadius: 10,
+              background: "#0D1B2A",
+            }}
+          >
+            {suggestions.map((f, i) => {
+              const label = formatPhotonAddress(f) || f.properties?.name || "—";
+              return (
+                <div
+                  key={i}
+                  onClick={() => {
+                    const [lon, lat] = f.geometry.coordinates;
+                    placeMarker(lat, lon, label);
+                    setSuggestions([]);
+                  }}
+                  style={{
+                    padding: "10px 12px",
+                    cursor: "pointer",
+                    borderBottom:
+                      i < suggestions.length - 1 ? "1px solid #1E2D3D" : "none",
+                    color: "#E2E8F0",
+                    fontSize: 13,
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#13243A")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  📍 {label}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div style={{ color: "#475569", fontSize: 11 }}>
-          💡 Busca o pulsa en el mapa. Puedes arrastrar la chincheta.
+          💡 Busca y elige el resultado correcto, o pulsa directamente en el mapa.
+          Puedes arrastrar la chincheta para ajustar.
         </div>
       </div>
       <div style={{ flex: 1, position: "relative" }}>
@@ -3041,27 +3135,36 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
   });
   y += boxH + 4;
 
-  // Tabla de artículos (si hay)
+  // Tabla de artículos desglosados (sólo 2 columnas: Artículo + Cantidad)
   if (articulos.length) {
-    const colW = [W * 0.55, W * 0.20, W * 0.25];
+    const colW = [W * 0.78, W * 0.22];
     const headH = 6;
     const rowAh = 6;
+
+    // Subtítulo de sección
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(20, 20, 20);
+    doc.text("Desglose de palets por modelo", M, y + 4);
+    y += 6;
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setFillColor(225, 225, 225);
     doc.setTextColor(20, 20, 20);
     doc.rect(M, y, W, headH, "FD");
-    doc.text("Descripción", M + 2, y + 4);
+    doc.text("Artículo", M + 2, y + 4);
     doc.text("Cantidad", M + colW[0] + 2, y + 4);
-    doc.text("Tipo", M + colW[0] + colW[1] + 2, y + 4);
     y += headH;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     articulos.forEach((a) => {
       doc.rect(M, y, W, rowAh);
-      doc.text((a.descripcion || "—").toString(), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      const label = a.code
+        ? `${a.code} · ${a.name || a.descripcion || ""}`
+        : a.name || a.descripcion || "—";
+      doc.text(label, M + 2, y + 4, { maxWidth: colW[0] - 4 });
       doc.text(String(a.cantidad ?? "—"), M + colW[0] + 2, y + 4);
-      doc.text((a.tipo || "").toString(), M + colW[0] + colW[1] + 2, y + 4, { maxWidth: colW[2] - 4 });
       y += rowAh;
     });
     // Fila total
@@ -3177,7 +3280,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   const addArticulo = () => {
     setData((d) => ({
       ...d,
-      articulos: [...(d.articulos || []), { descripcion: "", cantidad: "", tipo: "" }],
+      articulos: [...(d.articulos || []), { code: "", name: "", cantidad: "" }],
     }));
   };
   const setArticulo = (idx, key, val) => {
@@ -3280,12 +3383,15 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     try {
       // Insert en palet_entries
       const cleanArticulos = (data.articulos || [])
-        .filter((a) => a.descripcion || a.cantidad)
-        .map((a) => ({
-          descripcion: a.descripcion || "",
-          cantidad: a.cantidad ? parseInt(a.cantidad, 10) : null,
-          tipo: a.tipo || "",
-        }));
+        .filter((a) => a.code || a.cantidad)
+        .map((a) => {
+          const found = PALET_ARTICLES.find((p) => p.code === a.code);
+          return {
+            code: a.code || "",
+            name: a.name || found?.name || "",
+            cantidad: a.cantidad ? parseInt(a.cantidad, 10) : null,
+          };
+        });
       const row = {
         numero_interno: data.numero_interno,
         proveedor: data.proveedor,
@@ -3333,20 +3439,18 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
-${cleanArticulos.length ? `<p><strong>Artículos recibidos:</strong></p>
+${cleanArticulos.length ? `<p><strong>Desglose de palets por modelo:</strong></p>
 <table cellpadding="4" cellspacing="0" style="border-collapse:collapse;margin:6px 0 14px 0;border:1px solid #ccc;">
   <tr style="background:#f3f4f6;">
-    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Descripción</th>
+    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Artículo</th>
     <th style="text-align:left;padding:6px;border:1px solid #ccc;">Cantidad</th>
-    <th style="text-align:left;padding:6px;border:1px solid #ccc;">Tipo</th>
   </tr>
   ${cleanArticulos.map((a) => `<tr>
-    <td style="padding:5px;border:1px solid #ccc;">${a.descripcion || "—"}</td>
+    <td style="padding:5px;border:1px solid #ccc;">${a.code ? `${a.code} · ` : ""}${a.name || "—"}</td>
     <td style="padding:5px;border:1px solid #ccc;">${a.cantidad ?? "—"}</td>
-    <td style="padding:5px;border:1px solid #ccc;">${a.tipo || "—"}</td>
   </tr>`).join("")}
   <tr style="background:#f3f4f6;">
-    <td colspan="2" style="padding:5px;border:1px solid #ccc;text-align:right;font-weight:700;">TOTAL</td>
+    <td style="padding:5px;border:1px solid #ccc;text-align:right;font-weight:700;">TOTAL</td>
     <td style="padding:5px;border:1px solid #ccc;font-weight:700;">${totalPalets} palets</td>
   </tr>
 </table>` : ""}
@@ -3510,7 +3614,7 @@ ${hasFirma
                 key={idx}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr auto",
+                  gridTemplateColumns: "2fr 1fr auto",
                   gap: 8,
                   alignItems: "end",
                   padding: "8px 10px",
@@ -3520,13 +3624,24 @@ ${hasFirma
                 }}
               >
                 <div>
-                  <label style={{ ...labelStyle, fontSize: 10 }}>Descripción</label>
-                  <input
-                    value={a.descripcion}
-                    onChange={(e) => setArticulo(idx, "descripcion", e.target.value)}
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Artículo</label>
+                  <select
+                    value={a.code || ""}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      const found = PALET_ARTICLES.find((p) => p.code === code);
+                      setArticulo(idx, "code", code);
+                      setArticulo(idx, "name", found?.name || "");
+                    }}
                     style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
-                    placeholder="ej. Europalet usado"
-                  />
+                  >
+                    <option value="">— Selecciona artículo —</option>
+                    {PALET_ARTICLES.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.code} · {p.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label style={{ ...labelStyle, fontSize: 10 }}>Cantidad</label>
@@ -3536,15 +3651,6 @@ ${hasFirma
                     onChange={(e) => setArticulo(idx, "cantidad", e.target.value)}
                     style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
                     placeholder="50"
-                  />
-                </div>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 10 }}>Tipo</label>
-                  <input
-                    value={a.tipo}
-                    onChange={(e) => setArticulo(idx, "tipo", e.target.value)}
-                    style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
-                    placeholder="ej. EPAL"
                   />
                 </div>
                 <button
@@ -4501,10 +4607,11 @@ function compressImage(file, maxW = 1280, quality = 0.85) {
 function PaletCompleteModal({ task, onClose, onAccept }) {
   const initialItems = Array.isArray(task.articulos) && task.articulos.length
     ? task.articulos.map((a) => ({
-        descripcion: a.descripcion || "",
+        code: a.code || "",
+        name: a.name || "",
         cantidad: a.cantidad == null ? "" : String(a.cantidad),
       }))
-    : [{ descripcion: "", cantidad: "" }];
+    : [{ code: "", name: "", cantidad: "" }];
   const [items, setItems] = useState(initialItems);
   const [error, setError] = useState("");
 
@@ -4514,7 +4621,7 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
   }, 0);
 
   const addRow = () =>
-    setItems((arr) => [...arr, { descripcion: "", cantidad: "" }]);
+    setItems((arr) => [...arr, { code: "", name: "", cantidad: "" }]);
   const setRow = (i, k, v) =>
     setItems((arr) => arr.map((a, idx) => (idx === i ? { ...a, [k]: v } : a)));
   const delRow = (i) =>
@@ -4567,12 +4674,23 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
             >
               <div>
                 <label style={{ ...labelStyle, fontSize: 10 }}>Artículo</label>
-                <input
-                  value={a.descripcion}
-                  onChange={(e) => setRow(idx, "descripcion", e.target.value)}
+                <select
+                  value={a.code}
+                  onChange={(e) => {
+                    const code = e.target.value;
+                    const found = PALET_ARTICLES.find((p) => p.code === code);
+                    setRow(idx, "code", code);
+                    setRow(idx, "name", found?.name || "");
+                  }}
                   style={{ ...inp, fontSize: 13, padding: "9px 11px" }}
-                  placeholder="ej. Europalet usado"
-                />
+                >
+                  <option value="">— Selecciona artículo —</option>
+                  {PALET_ARTICLES.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.code} · {p.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={{ ...labelStyle, fontSize: 10 }}>Cantidad</label>
@@ -4691,26 +4809,30 @@ function PaletCompleteModal({ task, onClose, onAccept }) {
           onClick={() => {
             // Validación
             const valid = items
-              .map((a) => ({
-                descripcion: (a.descripcion || "").trim(),
-                cantidad: parseInt(a.cantidad, 10),
-              }))
-              .filter((a) => a.descripcion || Number.isFinite(a.cantidad));
+              .map((a) => {
+                const found = PALET_ARTICLES.find((p) => p.code === a.code);
+                return {
+                  code: a.code || "",
+                  name: a.name || found?.name || "",
+                  cantidad: parseInt(a.cantidad, 10),
+                };
+              })
+              .filter((a) => a.code || Number.isFinite(a.cantidad));
             if (valid.length === 0) {
               setError("Añade al menos un artículo con cantidad.");
               return;
             }
             for (const a of valid) {
-              if (!a.descripcion) {
-                setError("Hay un artículo sin descripción. Rellénalo o elimínalo.");
+              if (!a.code) {
+                setError("Hay un artículo sin seleccionar. Elígelo del desplegable o elimínalo.");
                 return;
               }
               if (!Number.isFinite(a.cantidad) || a.cantidad <= 0) {
-                setError(`La cantidad de "${a.descripcion}" debe ser un número mayor que 0.`);
+                setError(`La cantidad de "${a.code} ${a.name}" debe ser un número mayor que 0.`);
                 return;
               }
               if (a.cantidad > 900) {
-                setError(`La cantidad de "${a.descripcion}" es muy alta (máx. 900 por línea).`);
+                setError(`La cantidad de "${a.code} ${a.name}" es muy alta (máx. 900 por línea).`);
                 return;
               }
             }
@@ -5069,18 +5191,25 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   });
   y += boxH + 4;
 
-  // Tabla de artículos (si los hay)
+  // Tabla de artículos desglosados (2 columnas: Artículo + Cantidad)
   const articulos = Array.isArray(task.articulos)
-    ? task.articulos.filter((a) => a && (a.descripcion || a.cantidad))
+    ? task.articulos.filter((a) => a && (a.code || a.descripcion || a.cantidad))
     : [];
   if (articulos.length) {
     const totalPalets = articulos.reduce((s, a) => {
       const n = parseInt(a.cantidad, 10);
       return s + (Number.isFinite(n) ? n : 0);
     }, 0);
-    const colW = [W * 0.65, W * 0.35];
+    const colW = [W * 0.78, W * 0.22];
     const headH = 6;
     const rowAh = 6;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(20, 20, 20);
+    doc.text("Desglose de palets por modelo", M, y + 4);
+    y += 6;
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setFillColor(225, 225, 225);
@@ -5093,7 +5222,10 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     doc.setFontSize(8.5);
     articulos.forEach((a) => {
       doc.rect(M, y, W, rowAh);
-      doc.text((a.descripcion || "—").toString(), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      const label = a.code
+        ? `${a.code} · ${a.name || a.descripcion || ""}`
+        : a.name || a.descripcion || "—";
+      doc.text(label, M + 2, y + 4, { maxWidth: colW[0] - 4 });
       doc.text(String(a.cantidad ?? "—"), M + colW[0] + 2, y + 4);
       y += rowAh;
     });
