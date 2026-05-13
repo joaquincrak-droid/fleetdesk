@@ -3005,10 +3005,19 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
   doc.setFontSize(15);
   doc.text("ALBARÁN DE ENTRADA DE PALETS", 105, M + 4, { align: "center" });
 
+  const articulos = Array.isArray(data.articulos)
+    ? data.articulos.filter((a) => a && (a.descripcion || a.cantidad))
+    : [];
+  const totalPalets = articulos.reduce((s, a) => {
+    const n = parseInt(a.cantidad, 10);
+    return s + (Number.isFinite(n) ? n : 0);
+  }, 0);
+
   const rows = [];
   rows.push(["Nº interno", data.numero_interno || "—"]);
   rows.push(["Proveedor", data.proveedor || "—"]);
   if (data.albaran) rows.push(["Nº albarán proveedor", data.albaran]);
+  if (totalPalets) rows.push(["Total palets", `${totalPalets}`]);
   rows.push(["Fecha y hora", new Date().toLocaleString("es-ES")]);
 
   let y = M + 10;
@@ -3031,6 +3040,38 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
     doc.text(String(r[1]), valueX, yy, { maxWidth: W - 43 });
   });
   y += boxH + 4;
+
+  // Tabla de artículos (si hay)
+  if (articulos.length) {
+    const colW = [W * 0.55, W * 0.20, W * 0.25];
+    const headH = 6;
+    const rowAh = 6;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setFillColor(225, 225, 225);
+    doc.setTextColor(20, 20, 20);
+    doc.rect(M, y, W, headH, "FD");
+    doc.text("Descripción", M + 2, y + 4);
+    doc.text("Cantidad", M + colW[0] + 2, y + 4);
+    doc.text("Tipo", M + colW[0] + colW[1] + 2, y + 4);
+    y += headH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    articulos.forEach((a) => {
+      doc.rect(M, y, W, rowAh);
+      doc.text((a.descripcion || "—").toString(), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      doc.text(String(a.cantidad ?? "—"), M + colW[0] + 2, y + 4);
+      doc.text((a.tipo || "").toString(), M + colW[0] + colW[1] + 2, y + 4, { maxWidth: colW[2] - 4 });
+      y += rowAh;
+    });
+    // Fila total
+    doc.setFont("helvetica", "bold");
+    doc.setFillColor(245, 245, 245);
+    doc.rect(M, y, W, rowAh, "FD");
+    doc.text("TOTAL", M + colW[0] - 4, y + 4, { align: "right" });
+    doc.text(`${totalPalets} palets`, M + colW[0] + 2, y + 4);
+    y += rowAh + 4;
+  }
 
   const imgX = M;
   const imgY = y;
@@ -3230,11 +3271,10 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   };
 
   // ── Guardado en BBDD + envío del email final con firma ──
+  // La firma es opcional: si el chófer no firma (por ejemplo
+  // porque ya se fue), la entrada se guarda igualmente. El
+  // email final lo dice claramente: "Sin firma".
   const finalSave = async () => {
-    if (!data.chofer_firma) {
-      setError("El chófer tiene que firmar antes de finalizar.");
-      return;
-    }
     setBusy(true);
     setError("");
     try {
@@ -3270,19 +3310,23 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
         token,
       );
 
-      // Segundo email: datos del transporte + firma inline
-      const firmaB64 = data.chofer_firma.replace(/^data:image\/png;base64,/, "");
+      // Segundo email: datos del transporte + firma (si la hay)
+      const hasFirma = !!data.chofer_firma;
+      const firmaB64 = hasFirma
+        ? data.chofer_firma.replace(/^data:image\/png;base64,/, "")
+        : "";
+      const totalPalets = cleanArticulos.reduce(
+        (s, a) => s + (Number.isFinite(a.cantidad) ? a.cantidad : 0),
+        0,
+      );
       const subject = `✅ Entrada de palets confirmada · ${data.numero_interno} · ${data.proveedor}`;
-      // Los datos de "empresa que carga" (proveedor + ciudad de
-      // carga) sólo aparecen en los correos internos. Más
-      // adelante, cuando configures el correo del proveedor, esos
-      // dos campos se omitirán de su copia.
       const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
-<p>Entrada confirmada con los datos del transporte y la firma del chófer:</p>
+<p>Entrada confirmada con los datos del transporte${hasFirma ? " y la firma del chófer" : ""}:</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº interno</td><td><strong>${data.numero_interno}</strong></td></tr>
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
   ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
+  ${totalPalets ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Total palets</td><td><strong>${totalPalets}</strong></td></tr>` : ""}
   ${data.transportista ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Empresa transportista</td><td><strong>${data.transportista}</strong></td></tr>` : ""}
   ${data.ciudad_carga ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Ciudad de carga</td><td><strong>${data.ciudad_carga}</strong></td></tr>` : ""}
   ${data.matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Matrícula camión</td><td><strong>${data.matricula}</strong></td></tr>` : ""}
@@ -3301,9 +3345,15 @@ ${cleanArticulos.length ? `<p><strong>Artículos recibidos:</strong></p>
     <td style="padding:5px;border:1px solid #ccc;">${a.cantidad ?? "—"}</td>
     <td style="padding:5px;border:1px solid #ccc;">${a.tipo || "—"}</td>
   </tr>`).join("")}
+  <tr style="background:#f3f4f6;">
+    <td colspan="2" style="padding:5px;border:1px solid #ccc;text-align:right;font-weight:700;">TOTAL</td>
+    <td style="padding:5px;border:1px solid #ccc;font-weight:700;">${totalPalets} palets</td>
+  </tr>
 </table>` : ""}
-<p><strong>Firma del chófer:</strong></p>
-<img src="cid:firma" alt="firma" style="border:1px solid #ccc;background:#fff;padding:6px;max-width:360px;display:block;" />
+${hasFirma
+    ? `<p><strong>Firma del chófer:</strong></p>
+<img src="cid:firma" alt="firma" style="border:1px solid #ccc;background:#fff;padding:6px;max-width:360px;display:block;" />`
+    : `<p style="color:#92400E;background:#FEF3C7;padding:8px 12px;border-radius:6px;display:inline-block;"><strong>⚠ Entrada sin firma del chófer.</strong></p>`}
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
 <p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
 </body></html>`;
@@ -3318,15 +3368,17 @@ ${cleanArticulos.length ? `<p><strong>Artículos recibidos:</strong></p>
           to: dest,
           subject,
           bodyHtml,
-          attachments: [
-            {
-              filename: "firma.png",
-              contentType: "image/png",
-              contentBase64: firmaB64,
-              inline: true,
-              contentId: "firma",
-            },
-          ],
+          attachments: hasFirma
+            ? [
+                {
+                  filename: "firma.png",
+                  contentType: "image/png",
+                  contentBase64: firmaB64,
+                  inline: true,
+                  contentId: "firma",
+                },
+              ]
+            : [],
         }),
       });
       if (!r.ok) throw new Error(await r.text());
@@ -5016,6 +5068,42 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     doc.text(r[1], valueX, yy, { maxWidth: W - 35 });
   });
   y += boxH + 4;
+
+  // Tabla de artículos (si los hay)
+  const articulos = Array.isArray(task.articulos)
+    ? task.articulos.filter((a) => a && (a.descripcion || a.cantidad))
+    : [];
+  if (articulos.length) {
+    const totalPalets = articulos.reduce((s, a) => {
+      const n = parseInt(a.cantidad, 10);
+      return s + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    const colW = [W * 0.65, W * 0.35];
+    const headH = 6;
+    const rowAh = 6;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setFillColor(225, 225, 225);
+    doc.setTextColor(20, 20, 20);
+    doc.rect(M, y, W, headH, "FD");
+    doc.text("Artículo", M + 2, y + 4);
+    doc.text("Cantidad", M + colW[0] + 2, y + 4);
+    y += headH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    articulos.forEach((a) => {
+      doc.rect(M, y, W, rowAh);
+      doc.text((a.descripcion || "—").toString(), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      doc.text(String(a.cantidad ?? "—"), M + colW[0] + 2, y + 4);
+      y += rowAh;
+    });
+    doc.setFont("helvetica", "bold");
+    doc.setFillColor(245, 245, 245);
+    doc.rect(M, y, W, rowAh, "FD");
+    doc.text("TOTAL", M + colW[0] - 4, y + 4, { align: "right" });
+    doc.text(`${totalPalets} palets`, M + colW[0] + 2, y + 4);
+    y += rowAh + 4;
+  }
 
   // Imagen del albarán: ocupa el resto de la página manteniendo proporción
   const imgX = M;
