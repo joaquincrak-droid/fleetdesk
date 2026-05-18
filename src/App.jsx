@@ -1607,6 +1607,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
       origin_name: sp.name || "",
       origin_nif: sp.nif || "",
       origin_cif: sp.nif || "",
+      origin_code: sp.code != null ? String(sp.code) : "",
       origin_address: sp.address || f.origin_address || "",
       origin_cp: sp.postal_code || f.origin_cp || "",
       origin_municipio: sp.city || f.origin_municipio || "",
@@ -3805,11 +3806,13 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
   }, 0);
 
   const rows = [];
-  rows.push(["Nº interno", data.numero_interno || "—"]);
+  rows.push(["Nº de documento", data.numero_interno || "—"]);
+  rows.push(["Referencia", data.albaran || "—"]);
+  rows.push(["Fecha", new Date().toLocaleString("es-ES")]);
   rows.push(["Proveedor", data.proveedor || "—"]);
-  if (data.albaran) rows.push(["Nº albarán proveedor", data.albaran]);
+  if (data.proveedor_code) rows.push(["Código proveedor", String(data.proveedor_code)]);
+  if (data.proveedor_cif) rows.push(["NIF/CIF proveedor", String(data.proveedor_cif)]);
   if (totalPalets) rows.push(["Total palets", `${totalPalets}`]);
-  rows.push(["Fecha y hora", new Date().toLocaleString("es-ES")]);
 
   let y = M + 10;
   const rowH = 5;
@@ -3832,9 +3835,9 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
   });
   y += boxH + 4;
 
-  // Tabla de artículos desglosados (sólo 2 columnas: Artículo + Cantidad)
+  // Tabla de artículos desglosados (3 columnas: Código artículo | Descripción | Cantidad)
   if (articulos.length) {
-    const colW = [W * 0.78, W * 0.22];
+    const colW = [W * 0.20, W * 0.58, W * 0.22];
     const headH = 6;
     const rowAh = 6;
 
@@ -3850,26 +3853,27 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
     doc.setFillColor(225, 225, 225);
     doc.setTextColor(20, 20, 20);
     doc.rect(M, y, W, headH, "FD");
-    doc.text("Artículo", M + 2, y + 4);
-    doc.text("Cantidad", M + colW[0] + 2, y + 4);
+    doc.text("Código artículo", M + 2, y + 4);
+    doc.text("Descripción", M + colW[0] + 2, y + 4);
+    doc.text("Cantidad", M + colW[0] + colW[1] + 2, y + 4);
     y += headH;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     articulos.forEach((a) => {
       doc.rect(M, y, W, rowAh);
-      const label = a.code
-        ? `${a.code} · ${a.name || a.descripcion || ""}`
-        : a.name || a.descripcion || "—";
-      doc.text(label, M + 2, y + 4, { maxWidth: colW[0] - 4 });
-      doc.text(String(a.cantidad ?? "—"), M + colW[0] + 2, y + 4);
+      doc.text(String(a.code || "—"), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      doc.text(String(a.name || a.descripcion || "—"), M + colW[0] + 2, y + 4, {
+        maxWidth: colW[1] - 4,
+      });
+      doc.text(String(a.cantidad ?? "—"), M + colW[0] + colW[1] + 2, y + 4);
       y += rowAh;
     });
     // Fila total
     doc.setFont("helvetica", "bold");
     doc.setFillColor(245, 245, 245);
     doc.rect(M, y, W, rowAh, "FD");
-    doc.text("TOTAL", M + colW[0] - 4, y + 4, { align: "right" });
-    doc.text(`${totalPalets} palets`, M + colW[0] + 2, y + 4);
+    doc.text("TOTAL", M + colW[0] + colW[1] - 4, y + 4, { align: "right" });
+    doc.text(`${totalPalets} palets`, M + colW[0] + colW[1] + 2, y + 4);
     y += rowAh + 4;
   }
 
@@ -3963,6 +3967,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     numero_interno: "",
     proveedor: "",
     proveedor_cif: "",
+    proveedor_code: "",
     albaran: "",
     foto_albaran: "",
     transportista: "",
@@ -4261,6 +4266,7 @@ ${hasFirma
                         setProvQuery(sp.name || "");
                         setF("proveedor", sp.name || "");
                         setF("proveedor_cif", sp.nif || "");
+                        setF("proveedor_code", sp.code != null ? String(sp.code) : "");
                         if (sp.city && !data.ciudad_carga) {
                           setF("ciudad_carga", sp.city);
                         }
@@ -5909,9 +5915,15 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   // Caja de datos: filas dinámicas según los campos disponibles
   const rows = [];
   rows.push(["Tipo", `${tipo}${task.subtype === "palets" ? " (palets)" : ""}`]);
-  rows.push(["Cliente", cliente]);
+  if (task.di_number) rows.push(["Nº de documento", String(task.di_number)]);
+  if (task.order_number) rows.push(["Referencia", String(task.order_number)]);
+  rows.push(["Fecha", `${fecha} ${hora}`]);
+  rows.push(["Proveedor / cliente", cliente]);
+  if (task.origin_code) rows.push(["Código proveedor", String(task.origin_code)]);
+  if (task.origin_nif || task.origin_cif) {
+    rows.push(["NIF/CIF", String(task.origin_nif || task.origin_cif)]);
+  }
   if (cantidad) rows.push(["Cantidad", String(cantidad)]);
-  if (task.order_number) rows.push(["Nº pedido", String(task.order_number)]);
   if (conductor || matricula) {
     rows.push([
       "Camión",
@@ -5919,7 +5931,6 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     ]);
   }
   if (receivedBy) rows.push(["Recibido por", receivedBy]);
-  rows.push(["Fecha y hora", `${fecha} ${hora}`]);
 
   let y = M + 10;
   const rowH = 5;
@@ -5942,7 +5953,7 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   });
   y += boxH + 4;
 
-  // Tabla de artículos desglosados (2 columnas: Artículo + Cantidad)
+  // Tabla de artículos desglosados (3 columnas: Código artículo | Descripción | Cantidad)
   const articulos = Array.isArray(task.articulos)
     ? task.articulos.filter((a) => a && (a.code || a.descripcion || a.cantidad))
     : [];
@@ -5951,7 +5962,7 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
       const n = parseInt(a.cantidad, 10);
       return s + (Number.isFinite(n) ? n : 0);
     }, 0);
-    const colW = [W * 0.78, W * 0.22];
+    const colW = [W * 0.20, W * 0.58, W * 0.22];
     const headH = 6;
     const rowAh = 6;
 
@@ -5966,25 +5977,26 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     doc.setFillColor(225, 225, 225);
     doc.setTextColor(20, 20, 20);
     doc.rect(M, y, W, headH, "FD");
-    doc.text("Artículo", M + 2, y + 4);
-    doc.text("Cantidad", M + colW[0] + 2, y + 4);
+    doc.text("Código artículo", M + 2, y + 4);
+    doc.text("Descripción", M + colW[0] + 2, y + 4);
+    doc.text("Cantidad", M + colW[0] + colW[1] + 2, y + 4);
     y += headH;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     articulos.forEach((a) => {
       doc.rect(M, y, W, rowAh);
-      const label = a.code
-        ? `${a.code} · ${a.name || a.descripcion || ""}`
-        : a.name || a.descripcion || "—";
-      doc.text(label, M + 2, y + 4, { maxWidth: colW[0] - 4 });
-      doc.text(String(a.cantidad ?? "—"), M + colW[0] + 2, y + 4);
+      doc.text(String(a.code || "—"), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      doc.text(String(a.name || a.descripcion || "—"), M + colW[0] + 2, y + 4, {
+        maxWidth: colW[1] - 4,
+      });
+      doc.text(String(a.cantidad ?? "—"), M + colW[0] + colW[1] + 2, y + 4);
       y += rowAh;
     });
     doc.setFont("helvetica", "bold");
     doc.setFillColor(245, 245, 245);
     doc.rect(M, y, W, rowAh, "FD");
-    doc.text("TOTAL", M + colW[0] - 4, y + 4, { align: "right" });
-    doc.text(`${totalPalets} palets`, M + colW[0] + 2, y + 4);
+    doc.text("TOTAL", M + colW[0] + colW[1] - 4, y + 4, { align: "right" });
+    doc.text(`${totalPalets} palets`, M + colW[0] + colW[1] + 2, y + 4);
     y += rowAh + 4;
   }
 
@@ -6722,6 +6734,7 @@ export default function App() {
         "origin_address",
         "origin_cif",
         "origin_nif",
+        "origin_code",
         "origin_nima",
         "origin_nro_inscripcion",
         "origin_tipo_operador",
