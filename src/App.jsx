@@ -1453,7 +1453,7 @@ function LoginScreen({ onLogin }) {
 }
 
 // ── Task Modal ────────────────────────────────────────────────
-function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, operators = [], onSaveOperator, onNextDi }) {
+function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, operators = [], onSaveOperator, onNextDi, token = null }) {
   const [form, setForm] = useState(
     task || {
       // Los conductores sólo pueden crear recogidas en su propio camión.
@@ -1566,6 +1566,57 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
       .filter((o) => (o.razon_social || "").toLowerCase().includes(q))
       .slice(0, 6);
   })();
+
+  // ── Proveedores (tabla suppliers) — solo en recogidas de palets ──
+  const [suppliers, setSuppliers] = useState([]);
+  useEffect(() => {
+    if (form.type !== "recogida" || form.subtype !== "palets") return;
+    if (suppliers.length > 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await sbFetch(
+          "suppliers?select=id,code,name,nif,city,province,address,postal_code,phone,email&is_active=eq.true&order=name.asc&limit=2000",
+          {},
+          token
+        );
+        if (alive) setSuppliers(rows || []);
+      } catch (_) {
+        // sin permisos / fallo: dejamos lista vacía
+      }
+    })();
+    return () => { alive = false; };
+  }, [form.type, form.subtype, token]);
+
+  const supplierSuggestions = (() => {
+    if (!(form.type === "recogida" && form.subtype === "palets")) return [];
+    const q = (operatorQuery || "").trim().toLowerCase();
+    if (!q) return (suppliers || []).slice(0, 8);
+    return (suppliers || [])
+      .filter((s) => {
+        const hay = `${s.name || ""} ${s.nif || ""} ${s.city || ""}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 8);
+  })();
+
+  const applySupplier = (sp) => {
+    setForm((f) => ({
+      ...f,
+      client: sp.name || "",
+      origin_name: sp.name || "",
+      origin_nif: sp.nif || "",
+      origin_cif: sp.nif || "",
+      origin_address: sp.address || f.origin_address || "",
+      origin_cp: sp.postal_code || f.origin_cp || "",
+      origin_municipio: sp.city || f.origin_municipio || "",
+      origin_provincia: sp.province || f.origin_provincia || "",
+      origin_telefono: sp.phone || f.origin_telefono || "",
+      origin_email: sp.email || f.origin_email || "",
+    }));
+    setOperatorQuery(sp.name || "");
+    setShowSuggest(false);
+  };
 
   return (
     <>
@@ -1834,7 +1885,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                 {form.subtype === "palets" && (
                   <>
                     <div style={{ position: "relative" }}>
-                      <label style={labelStyle}>Cliente</label>
+                      <label style={labelStyle}>Proveedor / cliente</label>
                       <input
                         value={operatorQuery}
                         onChange={(e) => {
@@ -1846,31 +1897,31 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                         onFocus={() => setShowSuggest(true)}
                         onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
                         style={inp}
-                        placeholder="Nombre del cliente o empresa"
+                        placeholder="Nombre del proveedor o empresa"
                         autoComplete="off"
                       />
-                      {showSuggest && suggestions.length > 0 && (
+                      {showSuggest && supplierSuggestions.length > 0 && (
                         <div
                           style={{
                             position: "absolute", top: "100%", left: 0, right: 0,
                             background: "#0F1E33", border: "1px solid #1E2D3D",
-                            borderRadius: 10, marginTop: 4, maxHeight: 200,
+                            borderRadius: 10, marginTop: 4, maxHeight: 240,
                             overflowY: "auto", zIndex: 10,
                           }}
                         >
-                          {suggestions.map((op) => (
+                          {supplierSuggestions.map((sp) => (
                             <div
-                              key={op.id}
-                              onMouseDown={(e) => { e.preventDefault(); applyOperator(op); }}
+                              key={sp.id}
+                              onMouseDown={(e) => { e.preventDefault(); applySupplier(sp); }}
                               style={{
                                 padding: "10px 12px", cursor: "pointer",
                                 borderBottom: "1px solid #1E2D3D",
                                 color: "#E2E8F0", fontSize: 13,
                               }}
                             >
-                              <div style={{ fontWeight: 700 }}>{op.razon_social}</div>
+                              <div style={{ fontWeight: 700 }}>{sp.name}</div>
                               <div style={{ fontSize: 11, color: "#64748B" }}>
-                                {[op.cif, op.municipio].filter(Boolean).join(" · ")}
+                                {[sp.nif, sp.city, sp.province].filter(Boolean).join(" · ")}
                               </div>
                             </div>
                           ))}
@@ -8340,6 +8391,7 @@ export default function App() {
           operators={operators}
           onSaveOperator={saveOperator}
           onNextDi={nextDiNumber}
+          token={token}
         />
       )}
       {deleteId && (
