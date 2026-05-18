@@ -3948,6 +3948,27 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     nextDocCode(token, counterStart).then((n) => setF("numero_interno", n));
   }, []);
 
+  // Cargar lista de proveedores (tabla suppliers, solo activos)
+  const [suppliers, setSuppliers] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await sbFetch(
+          "suppliers?select=id,code,name,nif,city,province,address,postal_code,phone,email&is_active=eq.true&order=name.asc&limit=2000",
+          {},
+          token
+        );
+        if (alive) setSuppliers(rows || []);
+      } catch (_) {
+        // si falla (ej. permisos), dejamos la lista vacía
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
   // Step 2: cámara
   const [preview, setPreview] = useState(null);
   const [photoB64, setPhotoB64] = useState(null);
@@ -3967,14 +3988,19 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     }
   };
 
-  // Autocompletado de proveedores en step 1
+  // Autocompletado de proveedores en step 1 (tabla suppliers)
   const [provQuery, setProvQuery] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
-  const suggestions = !provQuery.trim()
-    ? []
-    : (operators || [])
-        .filter((o) => (o.razon_social || "").toLowerCase().includes(provQuery.toLowerCase()))
-        .slice(0, 6);
+  const suggestions = (() => {
+    const q = (provQuery || "").trim().toLowerCase();
+    if (!q) return (suppliers || []).slice(0, 8);
+    return (suppliers || [])
+      .filter((s) => {
+        const hay = `${s.name || ""} ${s.nif || ""} ${s.city || ""}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 8);
+  })();
 
   const dest = "transportes.jcpalets@hotmail.com";
 
@@ -4172,18 +4198,21 @@ ${hasFirma
                   style={{
                     position: "absolute", top: "100%", left: 0, right: 0,
                     background: "#0F1E33", border: "1px solid #1E2D3D",
-                    borderRadius: 10, marginTop: 4, maxHeight: 200,
+                    borderRadius: 10, marginTop: 4, maxHeight: 240,
                     overflowY: "auto", zIndex: 10,
                   }}
                 >
-                  {suggestions.map((op) => (
+                  {suggestions.map((sp) => (
                     <div
-                      key={op.id}
+                      key={sp.id}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        setProvQuery(op.razon_social || "");
-                        setF("proveedor", op.razon_social || "");
-                        setF("proveedor_cif", op.cif || "");
+                        setProvQuery(sp.name || "");
+                        setF("proveedor", sp.name || "");
+                        setF("proveedor_cif", sp.nif || "");
+                        if (sp.city && !data.ciudad_carga) {
+                          setF("ciudad_carga", sp.city);
+                        }
                         setShowSuggest(false);
                       }}
                       style={{
@@ -4192,9 +4221,9 @@ ${hasFirma
                         color: "#E2E8F0", fontSize: 13,
                       }}
                     >
-                      <div style={{ fontWeight: 700 }}>{op.razon_social}</div>
+                      <div style={{ fontWeight: 700 }}>{sp.name}</div>
                       <div style={{ fontSize: 11, color: "#64748B" }}>
-                        {[op.cif, op.municipio].filter(Boolean).join(" · ")}
+                        {[sp.nif, sp.city, sp.province].filter(Boolean).join(" · ")}
                       </div>
                     </div>
                   ))}
