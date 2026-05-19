@@ -79,6 +79,9 @@ const PALET_ARTICLES_RECOGIDAS = [
 // modelos que pueden entrar en nuestras instalaciones desde
 // proveedores.
 const PALET_ARTICLES_DESCARGAS = [
+  { code: "R1",  name: "RECOGIDA PALETS DE DESECHO EUROPEOS" },
+  { code: "R2",  name: "RECOGIDA PALETS DE DESECHO NORMALES" },
+  { code: "R3",  name: "EUROWEBER" },
   { code: "001", name: "PALET EUROPEO BLANCO" },
   { code: "002", name: "PALET EUROPEO" },
   { code: "003", name: "PALET 80 X 120 FUERTE" },
@@ -103,7 +106,6 @@ const PALET_ARTICLES_DESCARGAS = [
   { code: "024", name: "PALET 120 X 120" },
   { code: "025", name: "PALET 115 X 115" },
   { code: "026", name: "PALETS 100 X 100 LISTONES" },
-  { code: "R3",  name: "EUROWEBER" },
 ];
 
 // Alias por compatibilidad con código antiguo
