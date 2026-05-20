@@ -4021,7 +4021,7 @@ async function nextDocCode(token, startFrom = 1) {
     // ignoramos: si falla la consulta, usamos el start
   }
 
-  // Recogidas de palets (tasks.di_number)
+  // Recogidas de palets antiguas (tasks.di_number con formato E-…)
   try {
     const t = await sbFetch(
       `tasks?di_number=like.E-*-${year}&select=di_number`,
@@ -4030,6 +4030,24 @@ async function nextDocCode(token, startFrom = 1) {
     );
     for (const r of t || []) {
       const m = (r.di_number || "").match(/^E-(\d+)-(\d+)$/);
+      if (m && parseInt(m[2], 10) === year) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    }
+  } catch (_e) {
+    // ignoramos
+  }
+
+  // Recogidas (palets y residuos) con número E en tasks.numero_interno
+  try {
+    const t = await sbFetch(
+      `tasks?numero_interno=like.E-*-${year}&select=numero_interno`,
+      {},
+      token,
+    );
+    for (const r of t || []) {
+      const m = (r.numero_interno || "").match(/^E-(\d+)-(\d+)$/);
       if (m && parseInt(m[2], 10) === year) {
         const n = parseInt(m[1], 10);
         if (n > max) max = n;
@@ -6045,7 +6063,10 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   // Caja de datos: filas dinámicas según los campos disponibles
   const rows = [];
   rows.push(["Tipo", `${tipo}${task.subtype === "palets" ? " (palets)" : ""}`]);
-  if (task.di_number) rows.push(["Nº de documento", String(task.di_number)]);
+  if (task.numero_interno) rows.push(["Nº de documento", String(task.numero_interno)]);
+  if (task.di_number && task.subtype !== "palets") {
+    rows.push(["Nº DI", String(task.di_number)]);
+  }
   if (task.order_number) rows.push(["Referencia", String(task.order_number)]);
   rows.push(["Fecha", `${fecha} ${hora}`]);
   rows.push(["Proveedor / cliente", cliente]);
@@ -6209,10 +6230,12 @@ async function sendDeliveryPhoto(
     pdfFilename = `${prefix}_${safeCliente}_${stamp}.pdf`;
   }
 
-  const subject = `Albarán firmado · ${tipo} ${cliente} · ${fecha}`;
+  const numDoc = task.numero_interno || "";
+  const subject = `Albarán firmado · ${tipo} ${cliente}${numDoc ? ` · ${numDoc}` : ""} · ${fecha}`;
   const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Se adjunta el albarán firmado en PDF correspondiente a:</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
+  ${numDoc ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº documento</td><td><strong>${numDoc}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Tipo</td><td><strong>${tipo}${task.subtype === "palets" ? " (palets)" : ""}</strong></td></tr>
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cliente</td><td><strong>${cliente}</strong></td></tr>
   ${cantidad ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Cantidad</td><td><strong>${cantidad}</strong></td></tr>` : ""}
@@ -6893,6 +6916,7 @@ export default function App() {
         "destination_nima",
         "transport_date",
         "di_number",
+        "numero_interno",
         "start_date",
         "end_date",
       ];
@@ -6913,15 +6937,9 @@ export default function App() {
         }
       }
 
-      // Para recogidas de PALETS, asignamos un código correlativo
-      // compartido con las descargas (E-N-AAAA).
-      if (form.type === "recogida" && form.subtype === "palets" && !form.id) {
-        const cur = form.di_number || "";
-        if (!/^E-\d+-\d+$/.test(cur)) {
-          const code = await nextDocCode(token, settings?.entry_counter_start || 1);
-          if (code) form.di_number = code;
-        }
-      }
+      // El código correlativo E-N-AAAA de las recogidas (palets y
+      // residuos) NO se asigna aquí: se genera al hacer la foto del
+      // albarán al completar la tarea (ver handlePhotoAccept).
 
       const clean = {};
       for (const k of CORE) {
@@ -7329,13 +7347,47 @@ export default function App() {
     setPhotoSending(true);
     setPhotoError("");
     try {
-      await sendDeliveryPhoto(photoTask, base64, dest, token, truck, customName);
+      // Las recogidas (palets y residuos) reciben su número
+      // correlativo E-N-AAAA AHORA, al hacer la foto del albarán.
+      // El contador es único y compartido con las descargas, así
+      // que nunca se solapan los números entre los tres tipos.
+      let taskForPhoto = photoTask;
+      if (photoTask.type === "recogida" && !photoTask.numero_interno) {
+        const code = await nextDocCode(
+          token,
+          settings?.entry_counter_start || 1,
+        );
+        if (code) {
+          await sbFetch(
+            `tasks?id=eq.${photoTask.id}`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({ numero_interno: code }),
+              headers: { Prefer: "return=minimal" },
+            },
+            token,
+          );
+          taskForPhoto = { ...photoTask, numero_interno: code };
+          // Reflejamos el número en el estado local al instante.
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === photoTask.id ? { ...t, numero_interno: code } : t,
+            ),
+          );
+          setCompleted((prev) =>
+            prev.map((t) =>
+              t.id === photoTask.id ? { ...t, numero_interno: code } : t,
+            ),
+          );
+        }
+      }
+      await sendDeliveryPhoto(taskForPhoto, base64, dest, token, truck, customName);
       // Si la tarea aún no está completada (entrega o palet
       // recogida), la completamos ahora. Para recogidas de
       // residuos llegamos aquí con la tarea YA completada
       // (después del DIR), así que no la tocamos otra vez.
-      if (photoTask.status !== "completado") {
-        await markComplete(photoTask.id);
+      if (taskForPhoto.status !== "completado") {
+        await markComplete(taskForPhoto.id);
       }
       setPhotoTask(null);
     } catch (e) {
@@ -8077,6 +8129,23 @@ export default function App() {
                   >
                     {task.origin_name || task.client || "Sin cliente"}
                   </div>
+                  {task.numero_interno && (
+                    <div
+                      style={{
+                        display: "inline-block",
+                        background: "rgba(245,158,11,0.15)",
+                        color: "#F59E0B",
+                        borderRadius: 8,
+                        padding: "2px 8px",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        marginBottom: 6,
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      {task.numero_interno}
+                    </div>
+                  )}
                   {task.address && !task.lat && (
                     <div style={{ color: "#64748B", fontSize: 13, marginBottom: 6 }}>
                       📍 {task.address}
