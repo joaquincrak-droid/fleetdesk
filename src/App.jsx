@@ -2440,8 +2440,74 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
 }
 
 // ── Operator Modal (alta + edición) ──────────────────────────
-function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null }) {
+function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null, token = null }) {
   const isEdit = !!(existing && existing.id);
+  const [copying, setCopying] = useState(false);
+
+  // Copia el cliente actual a la tabla de proveedores (suppliers).
+  // Antes comprueba si ya existe un proveedor con el mismo nombre
+  // para no crear duplicados.
+  const copyToSupplier = async () => {
+    const nombre = (op.razon_social || "").trim();
+    if (!nombre) {
+      alert("El cliente no tiene razón social.");
+      return;
+    }
+    setCopying(true);
+    try {
+      // Comprobamos duplicados comparando el nombre normalizado
+      // (sin distinguir mayúsculas ni acentos) contra los
+      // proveedores existentes.
+      const norm = (s) =>
+        (s || "")
+          .toString()
+          .normalize("NFD")
+          .replace(/[̀-ͯ]/g, "")
+          .trim()
+          .toLowerCase();
+      const existentes = await sbFetch(
+        `suppliers?select=id,name&limit=2000`,
+        {},
+        token,
+      );
+      const dup = (existentes || []).find(
+        (s) => norm(s.name) === norm(nombre),
+      );
+      if (dup) {
+        alert(
+          `Ya existe un proveedor llamado "${dup.name}". ` +
+            `No se ha creado un duplicado.`,
+        );
+        setCopying(false);
+        return;
+      }
+      const row = {
+        name: nombre,
+        nif: op.cif || null,
+        address: op.direccion || null,
+        postal_code: op.cp || null,
+        city: op.municipio || null,
+        province: op.provincia || null,
+        phone: op.telefono || null,
+        email: op.email || null,
+        is_active: true,
+      };
+      await sbFetch(
+        "suppliers",
+        {
+          method: "POST",
+          body: JSON.stringify(row),
+          headers: { Prefer: "return=minimal" },
+        },
+        token,
+      );
+      alert(`"${nombre}" se ha añadido a Proveedores.`);
+    } catch (e) {
+      alert("No se pudo pasar a proveedores: " + (e.message || e));
+    } finally {
+      setCopying(false);
+    }
+  };
   const [op, setOp] = useState(
     existing
       ? {
@@ -2559,6 +2625,34 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
             </div>
           </div>
         </div>
+        {isEdit && (
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 14,
+              borderTop: "1px dashed #1E2D3D",
+            }}
+          >
+            <button
+              onClick={copyToSupplier}
+              disabled={copying}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 10,
+                border: "1px solid #4F46E5",
+                background: "rgba(79,70,229,0.12)",
+                color: copying ? "#64748B" : "#A5B4FC",
+                cursor: copying ? "default" : "pointer",
+                fontWeight: 700,
+                fontSize: 13,
+                fontFamily: "inherit",
+              }}
+            >
+              {copying ? "Pasando…" : "📋 Pasar este cliente a Proveedores"}
+            </button>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
           <div>
             {isEdit && onDelete && (
@@ -3219,7 +3313,7 @@ function SuppliersListModal({ token, isAdmin, onClose }) {
 }
 
 // ── Operators List Modal (gestión de clientes) ───────────────
-function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
+function OperatorsListModal({ operators, onClose, onSave, onDelete, token = null }) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null); // null = lista, {} = nuevo, {...id} = editar
   const [saving, setSaving] = useState(false);
@@ -3245,6 +3339,7 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete }) {
       <OperatorModal
         existing={editing.id ? editing : null}
         initialName={editing.razon_social || ""}
+        token={token}
         onClose={() => setEditing(null)}
         onSave={async (op) => {
           if (saving) return;
@@ -8637,6 +8732,7 @@ export default function App() {
           onClose={() => setShowOperators(false)}
           onSave={saveOperator}
           onDelete={deleteOperator}
+          token={token}
         />
       )}
       {showUsers && (
