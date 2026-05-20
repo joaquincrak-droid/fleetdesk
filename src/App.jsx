@@ -4085,20 +4085,37 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
   return dataUri.split(",")[1];
 }
 
-// Calcula el siguiente código de documento "E-N-AAAA" compartido
-// entre las descargas (palet_entries.numero_interno) y las
-// recogidas de palets (tasks.di_number con type=recogida +
-// subtype=palets). Así no hay duplicados entre las dos listas.
+// Devuelve el siguiente código de documento "E-N-AAAA", único y
+// compartido por descargas, recogidas de palets y recogidas de
+// residuos.
 //
-// startFrom: el admin puede fijar desde qué número arrancar
-// (settings.entry_counter_start). Si lo deja en 1, los códigos
-// son E-1-AAAA, E-2-AAAA, … Si lo cambia a 50, el siguiente
-// código será E-50-AAAA si no hay ninguno mayor.
+// Usa la función de servidor next_doc_code(): se ejecuta con
+// permisos elevados (ve TODAS las tablas aunque la llame un
+// conductor) e incrementa el contador de forma atómica, así dos
+// personas nunca obtienen el mismo número.
+//
+// Si la función todavía no existe (migración sin aplicar), cae
+// al cálculo en el cliente — menos fiable, pero evita romper.
 async function nextDocCode(token, startFrom = 1) {
+  // 1) Intento con la función atómica del servidor.
+  try {
+    const r = await sbFetch(
+      "rpc/next_doc_code",
+      { method: "POST", body: JSON.stringify({}) },
+      token,
+    );
+    const code = Array.isArray(r) ? r[0] : r;
+    if (typeof code === "string" && /^E-\d+-\d+$/.test(code)) {
+      return code;
+    }
+  } catch (_e) {
+    // la función no existe aún → usamos el fallback de abajo
+  }
+
+  // 2) Fallback: cálculo en el cliente (poco fiable con RLS).
   const year = new Date().getFullYear();
   let max = Math.max(0, (parseInt(startFrom, 10) || 1) - 1);
 
-  // Descargas (palet_entries)
   try {
     const e = await sbFetch(
       `palet_entries?numero_interno=like.E-*-${year}&select=numero_interno`,
@@ -4113,10 +4130,9 @@ async function nextDocCode(token, startFrom = 1) {
       }
     }
   } catch (_e) {
-    // ignoramos: si falla la consulta, usamos el start
+    // ignoramos
   }
 
-  // Recogidas de palets antiguas (tasks.di_number con formato E-…)
   try {
     const t = await sbFetch(
       `tasks?di_number=like.E-*-${year}&select=di_number`,
@@ -4134,7 +4150,6 @@ async function nextDocCode(token, startFrom = 1) {
     // ignoramos
   }
 
-  // Recogidas (palets y residuos) con número E en tasks.numero_interno
   try {
     const t = await sbFetch(
       `tasks?numero_interno=like.E-*-${year}&select=numero_interno`,
@@ -4196,10 +4211,9 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   };
   const setF = (k, v) => setData((d) => ({ ...d, [k]: v }));
 
-  // Calcular nº interno al abrir el asistente
-  useEffect(() => {
-    nextDocCode(token, counterStart).then((n) => setF("numero_interno", n));
-  }, []);
+  // El nº correlativo NO se pide al abrir el asistente, sino al
+  // pulsar "Continuar" en el paso 1 — así abrir y cerrar el
+  // asistente sin registrar nada no consume números.
 
   // Cargar lista de proveedores (tabla suppliers, solo activos)
   const [suppliers, setSuppliers] = useState([]);
@@ -4605,12 +4619,25 @@ ${hasFirma
               Cancelar
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (!data.proveedor.trim()) return setError("Indica el proveedor.");
                 if (!data.albaran.trim()) return setError("Indica el nº de albarán del proveedor.");
                 setError("");
+                // Reservamos el nº correlativo ahora (al avanzar).
+                if (!data.numero_interno) {
+                  setBusy(true);
+                  try {
+                    const code = await nextDocCode(token, counterStart);
+                    setF("numero_interno", code);
+                  } catch (_) {
+                    // si falla, se reintenta al volver a pulsar
+                  } finally {
+                    setBusy(false);
+                  }
+                }
                 setStep(2);
               }}
+              disabled={busy}
               style={{
                 padding: "10px 16px", borderRadius: 10, border: "none",
                 background: "linear-gradient(135deg,#F59E0B,#EA580C)", color: "#fff",
@@ -8135,9 +8162,9 @@ export default function App() {
             <div style={{ fontSize: 15, fontWeight: 600 }}>
               {activeTab === "activas" ? "No hay tareas activas" : "No hay tareas completadas"}
             </div>
-            {activeTab === "activas" && (isAdmin || truckId) && (
+            {activeTab === "activas" && isAdmin && (
               <div style={{ fontSize: 13, marginTop: 6, color: "#1E2D3D" }}>
-                {isAdmin ? "Pulsa + para añadir una" : "Pulsa + para crear una recogida"}
+                Pulsa + para añadir una
               </div>
             )}
           </div>
@@ -8676,11 +8703,12 @@ export default function App() {
         )}
       </div>
 
-      {/* FAB: nueva tarea (admin siempre, conductor sólo si tiene camión) */}
-      {section === "camiones" && activeTab === "activas" && (isAdmin || truckId) && (
+      {/* FAB: nueva tarea — solo el administrador puede crear.
+          Los conductores únicamente ven y completan tareas. */}
+      {section === "camiones" && activeTab === "activas" && isAdmin && (
         <button
           onClick={() => setModal("new")}
-          title={isAdmin ? "Nueva tarea" : "Nueva recogida"}
+          title="Nueva tarea"
           style={{
             position: "fixed",
             bottom: 28,
