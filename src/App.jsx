@@ -1349,6 +1349,72 @@ async function sendDirEmail(task, settings, truck, accessToken) {
   return { sentTo: toAddr, filename };
 }
 
+// Horario permitido para los conductores: 07:30 – 19:00.
+// Los administradores no tienen ninguna restricción horaria.
+const DRIVER_START_MIN = 7 * 60 + 30; // 450  → 07:30
+const DRIVER_END_MIN = 19 * 60;       // 1140 → 19:00
+
+// ── Pantalla "fuera de horario" (solo conductores) ────────────
+function OutOfHoursScreen({ onLogout }) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#060D1A",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        color: "#E2E8F0",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>🌙</div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 12 }}>
+          Fuera de horario
+        </div>
+        <div
+          style={{
+            fontSize: 14,
+            color: "#94A3B8",
+            lineHeight: 1.6,
+            marginBottom: 10,
+          }}
+        >
+          La aplicación está disponible para los conductores de{" "}
+          <strong style={{ color: "#E2E8F0" }}>7:30 a 19:00</strong>.
+          Vuelve a intentarlo dentro de ese horario.
+        </div>
+        <div style={{ fontSize: 13, color: "#64748B", marginBottom: 26 }}>
+          Hora actual: {hh}:{mm}
+        </div>
+        <button
+          onClick={onLogout}
+          style={{
+            width: "100%",
+            padding: "13px",
+            borderRadius: 12,
+            border: "1px solid #1E2D3D",
+            background: "transparent",
+            color: "#94A3B8",
+            cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 14,
+            fontFamily: "inherit",
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Login Screen ──────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -6485,6 +6551,12 @@ export default function App() {
   const [showUsers, setShowUsers] = useState(false);
   const [showEntradas, setShowEntradas] = useState(false);
   const [showSuppliers, setShowSuppliers] = useState(false);
+  // Minuto actual del día (0-1439). Se refresca cada 30 s para
+  // aplicar en vivo la restricción horaria de los conductores.
+  const [nowMin, setNowMin] = useState(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  });
   const [photoTask, setPhotoTask] = useState(null);    // tarea pendiente de foto albarán
   const [paletCompleteTask, setPaletCompleteTask] = useState(null); // tarea palets pendiente de artículos
   const [photoSending, setPhotoSending] = useState(false);
@@ -6573,6 +6645,16 @@ export default function App() {
     };
     window.addEventListener("fleet:token-refreshed", handler);
     return () => window.removeEventListener("fleet:token-refreshed", handler);
+  }, []);
+
+  // Refresca el minuto actual cada 30 s para aplicar en vivo la
+  // restricción horaria de los conductores (07:30 – 19:00).
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = new Date();
+      setNowMin(d.getHours() * 60 + d.getMinutes());
+    }, 30000);
+    return () => clearInterval(id);
   }, []);
 
   // Al cambiar de pestaña entre Activas y Completadas, ajustamos
@@ -7363,6 +7445,14 @@ export default function App() {
   };
 
   if (!token) return <LoginScreen onLogin={handleLogin} />;
+
+  // Restricción horaria: los conductores solo pueden usar la app
+  // de 07:30 a 19:00. Los administradores no tienen límite.
+  const driverHoursOk =
+    nowMin >= DRIVER_START_MIN && nowMin < DRIVER_END_MIN;
+  if (!isAdmin && !driverHoursOk) {
+    return <OutOfHoursScreen onLogout={handleLogout} />;
+  }
 
   if (view === "ajustes" && isAdmin) {
     return (
