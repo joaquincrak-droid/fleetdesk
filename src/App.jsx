@@ -899,7 +899,10 @@ async function generateDIR(task, settings, truck, opts = {}) {
     nif: emisor.cif || "B73384059",
     razon: emisor.razon_social || "RECIPALETS TOTANA S.L.",
     nima: emisor.nima || "3020143940",
+    // Nº de inscripción como gestor (número GOR)
     inscripcion: emisor.autorizacion || "GOR20230019",
+    // Registro de transportista (RT)
+    rt: emisor.registro_transportista || "",
     tipoGestor: "G04",
     direccion: emisor.domicilio || "CALLE NARANJO Nº 6",
     cp: "30850",
@@ -1115,7 +1118,7 @@ async function generateDIR(task, settings, truck, opts = {}) {
   ]);
   y = row(y, [
     { label: "NIMA:", value: recipalets.nima, w: halfW },
-    { label: "Nº inscripción", value: recipalets.inscripcion, w: halfW },
+    { label: "Nº registro transportista", value: recipalets.rt, w: halfW },
   ]);
   y = row(y, [
     { label: "Dirección", value: recipalets.direccion, w: W - qW / 2 },
@@ -6480,18 +6483,33 @@ function DeleteModal({ onConfirm, onCancel, loading }) {
 
 // ── Settings Screen ───────────────────────────────────────────
 function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
-  const [form, setForm] = useState({
-    razon_social: settings?.razon_social || "",
-    cif: settings?.cif || "",
-    domicilio: settings?.domicilio || "",
-    telefono: settings?.telefono || "",
-    email: settings?.email || "",
-    nima: settings?.nima || "",
-    autorizacion: settings?.autorizacion || "",
-    entry_counter_start: settings?.entry_counter_start ?? 1,
+  const buildForm = (s) => ({
+    razon_social: s?.razon_social || "",
+    cif: s?.cif || "",
+    domicilio: s?.domicilio || "",
+    telefono: s?.telefono || "",
+    email: s?.email || "",
+    nima: s?.nima || "",
+    autorizacion: s?.autorizacion || "",
+    registro_transportista: s?.registro_transportista || "",
+    entry_counter_start: s?.entry_counter_start ?? 1,
   });
+  const [form, setForm] = useState(() => buildForm(settings));
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const [saved, setSaved] = useState(false);
+
+  // Cuando los ajustes terminan de cargarse (llegan asíncronos),
+  // rellenamos el formulario con lo que hay guardado, para que
+  // SIEMPRE se vean los datos actuales de la empresa. Solo lo
+  // hacemos la primera vez, para no pisar lo que se esté
+  // editando si los datos se recargan en segundo plano.
+  const loadedRef = useRef(false);
+  useEffect(() => {
+    if (settings && !loadedRef.current) {
+      loadedRef.current = true;
+      setForm(buildForm(settings));
+    }
+  }, [settings]);
 
   const handleSave = async () => {
     await onSave(form);
@@ -6579,19 +6597,34 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
               value={form.nima}
               onChange={(e) => set("nima", e.target.value)}
               style={inp}
-              placeholder="Opcional"
+              placeholder="3020143940"
               disabled={!isAdmin}
             />
           </div>
           <div>
-            <label style={labelStyle}>Nº autorización transportista</label>
+            <label style={labelStyle}>Nº de inscripción (GOR)</label>
             <input
               value={form.autorizacion}
               onChange={(e) => set("autorizacion", e.target.value)}
               style={inp}
-              placeholder="T-000XXX"
+              placeholder="GOR20230019"
               disabled={!isAdmin}
             />
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Registro de transportista (RT)</label>
+          <input
+            value={form.registro_transportista}
+            onChange={(e) => set("registro_transportista", e.target.value)}
+            style={inp}
+            placeholder="RT-XXXXX"
+            disabled={!isAdmin}
+          />
+          <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+            El Nº de inscripción (GOR) aparece en el DIR como gestor;
+            el Registro de transportista (RT) aparece en la sección
+            del transportista.
           </div>
         </div>
 
@@ -6903,6 +6936,7 @@ export default function App() {
         "email",
         "nima",
         "autorizacion",
+        "registro_transportista",
         "entry_counter_start",
       ];
       const clean = {};
