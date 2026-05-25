@@ -3315,6 +3315,580 @@ function SuppliersListModal({ token, isAdmin, onClose }) {
   );
 }
 
+// ── Agencias de transporte ───────────────────────────────────
+// Empresas/agencias de transporte a las que se les envía la
+// documentación del paso 3 del asistente de Descargas.
+function AgencyFormModal({ existing = null, onClose, onSave, onArchive, onRestore, isAdmin }) {
+  const isEdit = !!(existing && existing.id);
+  const [s, setS] = useState(
+    existing
+      ? {
+          id: existing.id,
+          code: existing.code ?? "",
+          name: existing.name || "",
+          nif: existing.nif || "",
+          address: existing.address || "",
+          postal_code: existing.postal_code || "",
+          city: existing.city || "",
+          province: existing.province || "",
+          phone: existing.phone || "",
+          email: existing.email || "",
+          notes: existing.notes || "",
+          is_active: existing.is_active !== false,
+        }
+      : {
+          code: "",
+          name: "",
+          nif: "",
+          address: "",
+          postal_code: "",
+          city: "",
+          province: "",
+          phone: "",
+          email: "",
+          notes: "",
+          is_active: true,
+        }
+  );
+  const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)", zIndex: 220, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", marginBottom: 14 }}>
+          {isEdit
+            ? (s.is_active ? "Editar agencia de transporte" : "Agencia de transporte archivada")
+            : "Nueva agencia de transporte"}
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Código</label>
+              <input
+                type="number"
+                value={s.code}
+                onChange={(e) => set("code", e.target.value)}
+                style={inp}
+                placeholder="único"
+                disabled={!isAdmin}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>NIF / CIF</label>
+              <input
+                value={s.nif}
+                onChange={(e) => set("nif", e.target.value)}
+                style={inp}
+                placeholder="ej. B12345678"
+                disabled={!isAdmin}
+              />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Razón social / Nombre *</label>
+            <input
+              value={s.name}
+              onChange={(e) => set("name", e.target.value)}
+              style={inp}
+              placeholder="Agencia de transporte"
+              disabled={!isAdmin}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Dirección</label>
+            <input
+              value={s.address}
+              onChange={(e) => set("address", e.target.value)}
+              style={inp}
+              placeholder="Calle, número, polígono…"
+              disabled={!isAdmin}
+            />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 2fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>C.P.</label>
+              <input
+                value={s.postal_code}
+                onChange={(e) => set("postal_code", e.target.value)}
+                style={inp}
+                disabled={!isAdmin}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Población</label>
+              <input
+                value={s.city}
+                onChange={(e) => set("city", e.target.value)}
+                style={inp}
+                disabled={!isAdmin}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Provincia</label>
+              <input
+                value={s.province}
+                onChange={(e) => set("province", e.target.value)}
+                style={inp}
+                disabled={!isAdmin}
+              />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Teléfono</label>
+              {isAdmin ? (
+                <input
+                  value={s.phone}
+                  onChange={(e) => set("phone", e.target.value)}
+                  style={inp}
+                  placeholder="+34 600 000 000"
+                />
+              ) : s.phone ? (
+                <a
+                  href={`tel:${s.phone}`}
+                  style={{ ...inp, display: "block", color: "#A5B4FC", textDecoration: "none" }}
+                >
+                  📞 {s.phone}
+                </a>
+              ) : (
+                <input value="" style={inp} disabled />
+              )}
+            </div>
+            <div>
+              <label style={labelStyle}>Email (recibe la documentación) *</label>
+              <input
+                value={s.email}
+                onChange={(e) => set("email", e.target.value)}
+                style={inp}
+                placeholder="contacto@agencia.com"
+                disabled={!isAdmin}
+              />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Notas</label>
+            <input
+              value={s.notes}
+              onChange={(e) => set("notes", e.target.value)}
+              style={inp}
+              placeholder="Observaciones internas"
+              disabled={!isAdmin}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            {isAdmin && isEdit && s.is_active && onArchive && (
+              <button
+                onClick={async () => {
+                  if (!confirm(`¿Archivar "${s.name}"? Dejará de aparecer en el listado y en el desplegado del paso 3.`)) return;
+                  await onArchive(s);
+                  onClose();
+                }}
+                style={{
+                  padding: "10px 16px", borderRadius: 10, border: "1px solid #7F1D1D",
+                  background: "transparent", color: "#F87171", cursor: "pointer",
+                  fontWeight: 600, fontSize: 13,
+                }}
+              >
+                🗄 Archivar
+              </button>
+            )}
+            {isAdmin && isEdit && !s.is_active && onRestore && (
+              <button
+                onClick={async () => {
+                  await onRestore(s);
+                  onClose();
+                }}
+                style={{
+                  padding: "10px 16px", borderRadius: 10, border: "1px solid #065F46",
+                  background: "transparent", color: "#34D399", cursor: "pointer",
+                  fontWeight: 600, fontSize: 13,
+                }}
+              >
+                ↩ Restaurar
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 16px", borderRadius: 10, border: "1px solid #1E2D3D",
+                background: "transparent", color: "#64748B", cursor: "pointer",
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              {isAdmin ? "Cancelar" : "Cerrar"}
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  if (!s.name.trim()) return alert("El nombre es obligatorio.");
+                  if (s.code !== "" && isNaN(parseInt(s.code, 10))) {
+                    return alert("El código debe ser un número.");
+                  }
+                  if (!s.email.trim()) {
+                    return alert("Indica el email de la agencia: es la dirección que recibirá la documentación.");
+                  }
+                  onSave(s);
+                }}
+                style={{
+                  padding: "10px 16px", borderRadius: 10, border: "none",
+                  background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+                  cursor: "pointer", fontWeight: 700, fontSize: 13,
+                }}
+              >
+                {isEdit ? "Guardar cambios" : "Guardar"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgenciesListModal({ token, isAdmin, onClose }) {
+  const PAGE_SIZE = 30;
+  const [agencies, setAgencies] = useState([]);
+  const [query, setQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = [];
+      params.push(`is_active=eq.${showArchived ? "false" : "true"}`);
+      if (query.trim()) {
+        const enc = encodeURIComponent(`*${query.trim()}*`);
+        params.push(`or=(name.ilike.${enc},nif.ilike.${enc},city.ilike.${enc},phone.ilike.${enc},email.ilike.${enc})`);
+      }
+      params.push("select=*");
+      params.push("order=name.asc");
+      params.push(`offset=${page * PAGE_SIZE}`);
+      params.push(`limit=${PAGE_SIZE + 1}`);
+      const data = await sbFetch(`transport_agencies?${params.join("&")}`, {}, token);
+      const rows = data || [];
+      setHasMore(rows.length > PAGE_SIZE);
+      setAgencies(rows.slice(0, PAGE_SIZE));
+    } catch (e) {
+      setError("Error al cargar agencias: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, [page, query, showArchived]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [query, showArchived]);
+
+  const save = async (ag) => {
+    const ALLOWED = [
+      "code", "name", "nif", "address", "postal_code", "city",
+      "province", "phone", "email", "notes", "is_active",
+    ];
+    const clean = {};
+    for (const k of ALLOWED) {
+      let v = ag[k];
+      if (k === "code") {
+        v = v === "" ? null : parseInt(v, 10);
+      } else if (typeof v === "string") {
+        v = v.trim() || null;
+      }
+      clean[k] = v;
+    }
+    if (ag.id) {
+      await sbFetch(
+        `transport_agencies?id=eq.${ag.id}`,
+        { method: "PATCH", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token,
+      );
+    } else {
+      await sbFetch(
+        "transport_agencies",
+        { method: "POST", body: JSON.stringify(clean), headers: { Prefer: "return=minimal" } },
+        token,
+      );
+    }
+    await load();
+  };
+
+  const archive = async (ag) => {
+    await sbFetch(
+      `transport_agencies?id=eq.${ag.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: false }),
+        headers: { Prefer: "return=minimal" },
+      },
+      token,
+    );
+    await load();
+  };
+
+  const restore = async (ag) => {
+    await sbFetch(
+      `transport_agencies?id=eq.${ag.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: true }),
+        headers: { Prefer: "return=minimal" },
+      },
+      token,
+    );
+    await load();
+  };
+
+  if (editing !== null) {
+    return (
+      <AgencyFormModal
+        existing={editing.id ? editing : null}
+        isAdmin={isAdmin}
+        onClose={() => setEditing(null)}
+        onSave={async (ag) => {
+          try { await save(ag); setEditing(null); }
+          catch (err) { alert("No se pudo guardar: " + err.message); }
+        }}
+        onArchive={async (ag) => {
+          try { await archive(ag); }
+          catch (err) { alert("No se pudo archivar: " + err.message); }
+        }}
+        onRestore={async (ag) => {
+          try { await restore(ag); }
+          catch (err) { alert("No se pudo restaurar: " + err.message); }
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+        backdropFilter: "blur(8px)", zIndex: 200, display: "flex",
+        alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0A1628", border: "1px solid #1E2D3D", borderRadius: 16,
+          padding: 20, width: "100%", maxWidth: 760, maxHeight: "92vh",
+          display: "flex", flexDirection: "column", gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#E2E8F0", flex: 1 }}>
+            🚚 Agencias de transporte
+          </div>
+          {isAdmin && (
+            <label
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                fontSize: 12, color: "#94A3B8", cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+              />
+              Ver archivadas
+            </label>
+          )}
+        </div>
+
+        <input
+          type="text"
+          placeholder="🔎 Nombre, NIF, población, teléfono o email…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{
+            padding: "10px 12px", borderRadius: 10,
+            border: "1px solid #1E2D3D", background: "#0F1E33", color: "#E2E8F0",
+            fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+          }}
+        />
+
+        {error && (
+          <div
+            style={{
+              padding: "10px 12px", borderRadius: 10,
+              background: "rgba(248,113,113,0.12)", color: "#F87171",
+              fontSize: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div
+          style={{
+            flex: 1, overflowY: "auto", border: "1px solid #1E2D3D",
+            borderRadius: 10, background: "#0D1B2A",
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              Cargando…
+            </div>
+          ) : agencies.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 13 }}>
+              {query
+                ? "Ninguna agencia coincide con la búsqueda."
+                : showArchived
+                ? "No hay agencias archivadas."
+                : 'Aún no hay agencias de transporte. Pulsa "+" para añadir la primera.'}
+            </div>
+          ) : (
+            agencies.map((ag, i) => (
+              <div
+                key={ag.id}
+                onClick={() => setEditing(ag)}
+                style={{
+                  padding: "12px 14px",
+                  borderBottom: i < agencies.length - 1 ? "1px solid #1E2D3D" : "none",
+                  cursor: "pointer",
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+                onMouseEnter={(ev) => (ev.currentTarget.style.background = "#13243A")}
+                onMouseLeave={(ev) => (ev.currentTarget.style.background = "transparent")}
+              >
+                <div
+                  style={{
+                    color: "#A5B4FC", fontWeight: 700, fontSize: 11, minWidth: 36,
+                    textAlign: "center",
+                  }}
+                >
+                  {ag.code != null ? `#${ag.code}` : ""}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 14 }}>
+                    {ag.name}
+                    {!ag.is_active && (
+                      <span style={{
+                        marginLeft: 8, fontSize: 10, color: "#F87171",
+                        background: "rgba(248,113,113,0.12)", padding: "1px 6px",
+                        borderRadius: 6, fontWeight: 600,
+                      }}>
+                        archivada
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                    {[ag.email, ag.city, ag.province].filter(Boolean).join(" · ") || "Sin email"}
+                  </div>
+                </div>
+                {ag.phone && (
+                  <a
+                    href={`tel:${ag.phone}`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      color: "#A5B4FC", fontSize: 12, textDecoration: "none",
+                      padding: "4px 10px", borderRadius: 8, border: "1px solid #1E2D3D",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    📞 {ag.phone}
+                  </a>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0 || loading}
+              style={{
+                padding: "8px 14px", borderRadius: 8, border: "1px solid #1E2D3D",
+                background: "transparent",
+                color: page === 0 || loading ? "#475569" : "#94A3B8",
+                cursor: page === 0 || loading ? "not-allowed" : "pointer",
+                fontSize: 13, fontWeight: 600,
+              }}
+            >
+              ← Ant.
+            </button>
+            <div style={{ padding: "8px 12px", color: "#64748B", fontSize: 12 }}>
+              Página {page + 1}
+            </div>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={!hasMore || loading}
+              style={{
+                padding: "8px 14px", borderRadius: 8, border: "1px solid #1E2D3D",
+                background: "transparent",
+                color: !hasMore || loading ? "#475569" : "#94A3B8",
+                cursor: !hasMore || loading ? "not-allowed" : "pointer",
+                fontSize: 13, fontWeight: 600,
+              }}
+            >
+              Sig. →
+            </button>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => setEditing({})}
+              style={{
+                padding: "10px 18px", borderRadius: 999, border: "none",
+                background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
+                cursor: "pointer", fontWeight: 700, fontSize: 18,
+                boxShadow: "0 6px 20px rgba(79,70,229,0.45)",
+              }}
+              title="Nueva agencia de transporte"
+            >
+              +
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "8px 14px", borderRadius: 10, border: "1px solid #1E2D3D",
+              background: "transparent", color: "#94A3B8", cursor: "pointer",
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Operators List Modal (gestión de clientes) ───────────────
 function OperatorsListModal({ operators, onClose, onSave, onDelete, token = null }) {
   const [query, setQuery] = useState("");
@@ -4190,6 +4764,9 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     matricula: "",
     chofer_nombre: "",
     chofer_firma: "",
+    transport_agency_id: "",
+    transport_agency_name: "",
+    transport_agency_email: "",
     articulos: [],
   });
 
@@ -4232,6 +4809,28 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
         if (alive) setSuppliers(rows || []);
       } catch (_) {
         // si falla (ej. permisos), dejamos la lista vacía
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  // Cargar lista de agencias de transporte (solo activas). Se usan
+  // en el paso 3 para elegir a quién enviar también la documentación.
+  const [agencies, setAgencies] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await sbFetch(
+          "transport_agencies?select=id,name,email&is_active=eq.true&order=name.asc&limit=2000",
+          {},
+          token
+        );
+        if (alive) setAgencies(rows || []);
+      } catch (_) {
+        // si falla, dejamos la lista vacía
       }
     })();
     return () => {
@@ -4373,6 +4972,9 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
       // internos del proveedor, ni el albarán, ni el desglose
       // de artículos — esa información se queda en la BBDD para
       // los demás correos.
+      // Agencia de transporte elegida en el paso 3 (opcional): si
+      // tiene email, recibe una copia (CC) de este mismo correo.
+      const agencyEmail = (data.transport_agency_email || "").trim();
       const subject = `✅ Transporte registrado · ${data.numero_interno}`;
       const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Datos del transporte registrados${hasFirma ? " con la firma del chófer" : ""}:</p>
@@ -4381,6 +4983,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   ${data.ciudad_carga ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Ciudad de carga</td><td><strong>${data.ciudad_carga}</strong></td></tr>` : ""}
   ${data.matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Matrícula camión</td><td><strong>${data.matricula}</strong></td></tr>` : ""}
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
+  ${data.transport_agency_name ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Agencia de transporte</td><td><strong>${data.transport_agency_name}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
 ${hasFirma
@@ -4399,6 +5002,7 @@ ${hasFirma
         },
         body: JSON.stringify({
           to: dest,
+          cc: agencyEmail || undefined,
           subject,
           bodyHtml,
           attachments: hasFirma
@@ -4814,6 +5418,32 @@ ${hasFirma
                 placeholder="Nombre y apellidos"
               />
             </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Agencia de transporte (recibe la documentación)</label>
+            <select
+              value={data.transport_agency_id}
+              onChange={(e) => {
+                const id = e.target.value;
+                const ag = agencies.find((a) => String(a.id) === String(id));
+                setF("transport_agency_id", id);
+                setF("transport_agency_name", ag?.name || "");
+                setF("transport_agency_email", ag?.email || "");
+              }}
+              style={inp}
+            >
+              <option value="">— Ninguna —</option>
+              {agencies.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}{a.email ? "" : " (sin email)"}
+                </option>
+              ))}
+            </select>
+            {data.transport_agency_id && !data.transport_agency_email && (
+              <div style={{ fontSize: 11, color: "#FBBF24", marginTop: 4 }}>
+                ⚠ Esta agencia no tiene email — no recibirá la documentación.
+              </div>
+            )}
           </div>
           <div>
             <label style={labelStyle}>Firma del chófer *</label>
@@ -6729,6 +7359,7 @@ export default function App() {
   const [showUsers, setShowUsers] = useState(false);
   const [showEntradas, setShowEntradas] = useState(false);
   const [showSuppliers, setShowSuppliers] = useState(false);
+  const [showAgencies, setShowAgencies] = useState(false);
   // Minuto actual del día (0-1439). Se refresca cada 30 s para
   // aplicar en vivo la restricción horaria de los conductores.
   const [nowMin, setNowMin] = useState(() => {
@@ -7829,6 +8460,25 @@ export default function App() {
             </button>
             {isAdmin && (
               <button
+                onClick={() => setShowAgencies(true)}
+                title="Agencias de transporte"
+                style={{
+                  background: "#1E2D3D",
+                  border: "none",
+                  color: "#94A3B8",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                }}
+              >
+                🚚
+              </button>
+            )}
+            {isAdmin && (
+              <button
                 onClick={() => setShowUsers(true)}
                 title="Usuarios y permisos"
                 style={{
@@ -8816,6 +9466,13 @@ export default function App() {
           token={token}
           isAdmin={isAdmin}
           onClose={() => setShowSuppliers(false)}
+        />
+      )}
+      {showAgencies && (
+        <AgenciesListModal
+          token={token}
+          isAdmin={isAdmin}
+          onClose={() => setShowAgencies(false)}
         />
       )}
       {paletCompleteTask && (
