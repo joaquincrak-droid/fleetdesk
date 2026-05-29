@@ -1594,6 +1594,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
       origin_name: op.razon_social || "",
       origin_nif: op.cif || "",
       origin_cif: op.cif || "",
+      origin_code: op.code != null ? String(op.code) : "",
       origin_nima: op.nima || "",
       origin_nro_inscripcion: op.nro_inscripcion || "",
       origin_tipo_operador: op.tipo_operador || "",
@@ -2469,10 +2470,27 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
           .trim()
           .toLowerCase();
       const existentes = await sbFetch(
-        `suppliers?select=id,name&limit=2000`,
+        `suppliers?select=id,code,name&limit=2000`,
         {},
         token,
       );
+      const codeNum =
+        op.code === "" || op.code == null || isNaN(parseInt(op.code, 10))
+          ? null
+          : parseInt(op.code, 10);
+      // Duplicado por código (si el cliente tiene código)
+      if (codeNum != null) {
+        const dupByCode = (existentes || []).find((s) => s.code === codeNum);
+        if (dupByCode) {
+          alert(
+            `Ya existe un proveedor con código ${codeNum} ("${dupByCode.name}"). ` +
+              `No se ha creado un duplicado.`,
+          );
+          setCopying(false);
+          return;
+        }
+      }
+      // Duplicado por nombre normalizado
       const dup = (existentes || []).find(
         (s) => norm(s.name) === norm(nombre),
       );
@@ -2485,6 +2503,7 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
         return;
       }
       const row = {
+        code: codeNum,
         name: nombre,
         nif: op.cif || null,
         address: op.direccion || null,
@@ -2515,6 +2534,7 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
     existing
       ? {
           id: existing.id,
+          code: existing.code ?? "",
           razon_social: existing.razon_social || "",
           cif: existing.cif || "",
           nima: existing.nima || "",
@@ -2528,6 +2548,7 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
           email: existing.email || "",
         }
       : {
+          code: "",
           razon_social: initialName || "",
           cif: "",
           nima: "",
@@ -2541,6 +2562,32 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
           email: "",
         }
   );
+
+  // Si el código del cliente coincide con un proveedor existente,
+  // mostramos un hint con el nombre del proveedor para que se
+  // pueda comprobar que es la misma empresa.
+  const [supplierMatch, setSupplierMatch] = useState(null);
+  useEffect(() => {
+    const code = op?.code;
+    if (code === "" || code == null || isNaN(parseInt(code, 10))) {
+      setSupplierMatch(null);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await sbFetch(
+          `suppliers?select=id,code,name,nif&code=eq.${parseInt(code, 10)}&limit=1`,
+          {},
+          token,
+        );
+        if (alive) setSupplierMatch((rows && rows[0]) || null);
+      } catch {
+        if (alive) setSupplierMatch(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [op?.code, token]);
   const set = (k, v) => setOp((o) => ({ ...o, [k]: v }));
   const inp = {
     width: "100%",
@@ -2575,10 +2622,38 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
           {isEdit ? "Editar cliente" : "Nuevo cliente"}
         </div>
         <div style={{ display: "grid", gap: 10 }}>
-          <div>
-            <label style={labelStyle}>Razón social *</label>
-            <input value={op.razon_social} onChange={(e) => set("razon_social", e.target.value)} style={inp} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Código</label>
+              <input
+                type="number"
+                value={op.code}
+                onChange={(e) => set("code", e.target.value)}
+                style={inp}
+                placeholder="igual al proveedor"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Razón social *</label>
+              <input value={op.razon_social} onChange={(e) => set("razon_social", e.target.value)} style={inp} />
+            </div>
           </div>
+          {supplierMatch && (
+            <div
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: "rgba(165,180,252,0.10)",
+                border: "1px solid rgba(165,180,252,0.3)",
+                color: "#C7D2FE",
+                fontSize: 11,
+              }}
+            >
+              Este código ya lo usa el proveedor <strong>{supplierMatch.name}</strong>
+              {supplierMatch.nif ? ` (NIF ${supplierMatch.nif})` : ""}.
+              Asegúrate de que es la misma empresa.
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <label style={labelStyle}>CIF / NIF</label>
@@ -2687,7 +2762,29 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
               Cancelar
             </button>
             <button
-              onClick={() => { if (!op.razon_social) return alert("Razón social obligatoria"); onSave(op); }}
+              onClick={() => {
+                if (!op.razon_social) return alert("Razón social obligatoria");
+                // Coordinación con proveedores: si hay un supplier con
+                // el mismo código y datos clave distintos, avisar.
+                if (supplierMatch) {
+                  const norm = (s) =>
+                    (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+                  const diffs = [];
+                  if (norm(supplierMatch.name) !== norm(op.razon_social || ""))
+                    diffs.push(`• Razón social: cliente "${op.razon_social || ""}" / proveedor "${supplierMatch.name || ""}"`);
+                  if (norm(supplierMatch.nif || "") !== norm(op.cif || ""))
+                    diffs.push(`• NIF/CIF: cliente "${op.cif || ""}" / proveedor "${supplierMatch.nif || ""}"`);
+                  if (diffs.length) {
+                    const ok = confirm(
+                      `El código ${op.code} ya existe en Proveedores con datos diferentes:\n\n` +
+                      diffs.join("\n") +
+                      `\n\n¿Guardar el cliente de todos modos?`
+                    );
+                    if (!ok) return;
+                  }
+                }
+                onSave(op);
+              }}
               style={{
                 padding: "10px 16px", borderRadius: 10, border: "none",
                 background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff",
@@ -2704,7 +2801,7 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
 }
 
 // ── Suppliers (Proveedores) ─────────────────────────────────
-function SupplierFormModal({ existing = null, onClose, onSave, onArchive, onRestore, isAdmin }) {
+function SupplierFormModal({ existing = null, onClose, onSave, onArchive, onRestore, isAdmin, token = null }) {
   const isEdit = !!(existing && existing.id);
   const [s, setS] = useState(
     existing
@@ -2737,6 +2834,32 @@ function SupplierFormModal({ existing = null, onClose, onSave, onArchive, onRest
         }
   );
   const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
+
+  // Coordinación con clientes: si el código coincide con un operator
+  // (cliente), guardamos sus datos para mostrar un hint y luego
+  // avisar si los datos clave no cuadran al guardar.
+  const [operatorMatch, setOperatorMatch] = useState(null);
+  useEffect(() => {
+    const code = s?.code;
+    if (code === "" || code == null || isNaN(parseInt(code, 10))) {
+      setOperatorMatch(null);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await sbFetch(
+          `operators?select=id,code,razon_social,cif&code=eq.${parseInt(code, 10)}&limit=1`,
+          {},
+          token,
+        );
+        if (alive) setOperatorMatch((rows && rows[0]) || null);
+      } catch {
+        if (alive) setOperatorMatch(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [s?.code, token]);
 
   return (
     <div
@@ -2783,6 +2906,22 @@ function SupplierFormModal({ existing = null, onClose, onSave, onArchive, onRest
               />
             </div>
           </div>
+          {operatorMatch && (
+            <div
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: "rgba(165,180,252,0.10)",
+                border: "1px solid rgba(165,180,252,0.3)",
+                color: "#C7D2FE",
+                fontSize: 11,
+              }}
+            >
+              Este código ya lo usa el cliente <strong>{operatorMatch.razon_social}</strong>
+              {operatorMatch.cif ? ` (CIF ${operatorMatch.cif})` : ""}.
+              Asegúrate de que es la misma empresa.
+            </div>
+          )}
           <div>
             <label style={labelStyle}>Razón social / Nombre *</label>
             <input
@@ -2926,6 +3065,23 @@ function SupplierFormModal({ existing = null, onClose, onSave, onArchive, onRest
                   if (!s.name.trim()) return alert("El nombre es obligatorio.");
                   if (s.code !== "" && isNaN(parseInt(s.code, 10))) {
                     return alert("El código debe ser un número.");
+                  }
+                  if (operatorMatch) {
+                    const norm = (x) =>
+                      (x || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+                    const diffs = [];
+                    if (norm(operatorMatch.razon_social) !== norm(s.name || ""))
+                      diffs.push(`• Nombre: proveedor "${s.name || ""}" / cliente "${operatorMatch.razon_social || ""}"`);
+                    if (norm(operatorMatch.cif || "") !== norm(s.nif || ""))
+                      diffs.push(`• NIF/CIF: proveedor "${s.nif || ""}" / cliente "${operatorMatch.cif || ""}"`);
+                    if (diffs.length) {
+                      const ok = confirm(
+                        `El código ${s.code} ya existe en Clientes con datos diferentes:\n\n` +
+                        diffs.join("\n") +
+                        `\n\n¿Guardar el proveedor de todos modos?`
+                      );
+                      if (!ok) return;
+                    }
                   }
                   onSave(s);
                 }}
@@ -3077,6 +3233,7 @@ function SuppliersListModal({ token, isAdmin, onClose }) {
       <SupplierFormModal
         existing={editing.id ? editing : null}
         isAdmin={isAdmin}
+        token={token}
         onClose={() => setEditing(null)}
         onSave={async (sup) => {
           try { await save(sup); setEditing(null); }
@@ -3905,7 +4062,7 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete, token = null
   const filtered = (operators || [])
     .filter((o) => {
       if (!q) return true;
-      return [o.razon_social, o.cif, o.nima, o.municipio, o.email]
+      return [o.razon_social, o.cif, o.nima, o.municipio, o.email, o.code != null ? String(o.code) : null]
         .filter(Boolean)
         .some((s) => norm(s).includes(q));
     })
@@ -4010,6 +4167,14 @@ function OperatorsListModal({ operators, onClose, onSave, onDelete, token = null
                 onMouseEnter={(e) => (e.currentTarget.style.background = "#13243A")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
+                <div
+                  style={{
+                    color: "#A5B4FC", fontWeight: 700, fontSize: 11, minWidth: 36,
+                    textAlign: "center",
+                  }}
+                >
+                  {op.code != null ? `#${op.code}` : ""}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 14 }}>
                     {op.razon_social || "(sin nombre)"}
@@ -6825,7 +6990,10 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   if (task.order_number) rows.push(["Referencia", String(task.order_number)]);
   rows.push(["Fecha", `${fecha} ${hora}`]);
   rows.push(["Proveedor / cliente", cliente]);
-  if (task.origin_code) rows.push(["Código proveedor", String(task.origin_code)]);
+  if (task.origin_code) {
+    const codeLabel = task.subtype === "residuos" ? "Código cliente" : "Código proveedor";
+    rows.push([codeLabel, String(task.origin_code)]);
+  }
   if (task.origin_nif || task.origin_cif) {
     rows.push(["NIF/CIF", String(task.origin_nif || task.origin_cif)]);
   }
@@ -7595,11 +7763,21 @@ export default function App() {
 
   const saveOperator = async (op) => {
     const ALLOWED = [
+      "code",
       "cif", "razon_social", "nima", "nro_inscripcion", "tipo_operador",
       "direccion", "cp", "municipio", "provincia", "telefono", "email",
     ];
     const clean = {};
-    for (const k of ALLOWED) clean[k] = op[k] ?? null;
+    for (const k of ALLOWED) {
+      let v = op[k];
+      if (k === "code") {
+        v = v === "" || v == null ? null : parseInt(v, 10);
+        if (Number.isNaN(v)) v = null;
+      } else if (v === undefined) {
+        v = null;
+      }
+      clean[k] = v;
+    }
     if (op.id) {
       await sbFetch(
         `operators?id=eq.${op.id}`,
