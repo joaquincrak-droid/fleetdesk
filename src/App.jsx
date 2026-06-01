@@ -2624,7 +2624,7 @@ function OperatorModal({ onClose, onSave, onDelete, initialName, existing = null
         <div style={{ display: "grid", gap: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: 10 }}>
             <div>
-              <label style={labelStyle}>Código</label>
+              <label style={labelStyle}>Código de cliente</label>
               <input
                 type="number"
                 value={op.code}
@@ -7280,7 +7280,7 @@ function DeleteModal({ onConfirm, onCancel, loading }) {
 }
 
 // ── Settings Screen ───────────────────────────────────────────
-function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
+function SettingsScreen({ settings, onSave, saving, onBack, isAdmin, token = null, onApplied = null }) {
   const buildForm = (s) => ({
     razon_social: s?.razon_social || "",
     cif: s?.cif || "",
@@ -7313,6 +7313,59 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
     await onSave(form);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  // ── Aplicar como siguiente número ──────────────────────────
+  // Llama a la función SQL set_next_doc_n(start_n) que empuja
+  // el contador real (doc_counter) para que la PRÓXIMA descarga,
+  // recogida de palets o recogida de residuos arranque con ese
+  // número. Si chocaría con números ya emitidos, la función
+  // devuelve un mensaje claro que mostramos aquí.
+  const [applying, setApplying] = useState(false);
+  const [applyMsg, setApplyMsg] = useState(null); // { ok: bool, text: string }
+  const applyNextNumber = async () => {
+    const n = parseInt(form.entry_counter_start, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setApplyMsg({ ok: false, text: "Pon un número entero mayor o igual que 1." });
+      return;
+    }
+    setApplying(true);
+    setApplyMsg(null);
+    try {
+      await sbFetch(
+        "rpc/set_next_doc_n",
+        { method: "POST", body: JSON.stringify({ start_n: n }) },
+        token,
+      );
+      // Guardamos también el valor en settings para que quede registrado
+      try {
+        await sbFetch(
+          "settings?id=eq.1",
+          {
+            method: "PATCH",
+            body: JSON.stringify({ entry_counter_start: n }),
+            headers: { Prefer: "return=minimal" },
+          },
+          token,
+        );
+      } catch (_) {
+        // si falla el guardado, no es crítico: la función ya empujó el contador
+      }
+      onApplied?.(n);
+      setApplyMsg({
+        ok: true,
+        text: `Hecho. El próximo documento que se cree será E-${n}-${new Date().getFullYear()}.`,
+      });
+    } catch (err) {
+      let msg = err?.message || String(err);
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.message) msg = parsed.message;
+      } catch {}
+      setApplyMsg({ ok: false, text: msg });
+    } finally {
+      setApplying(false);
+    }
   };
 
   return (
@@ -7428,24 +7481,61 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin }) {
 
         <div style={{ marginTop: 6, paddingTop: 12, borderTop: "1px dashed #1E2D3D" }}>
           <label style={labelStyle}>
-            Empezar contador de descargas y recogidas de palets desde
+            Siguiente número de albarán (descargas, recogidas de palets y de residuos)
           </label>
-          <input
-            type="number"
-            min="1"
-            value={form.entry_counter_start}
-            onChange={(e) => set("entry_counter_start", e.target.value)}
-            style={{ ...inp, maxWidth: 180 }}
-            placeholder="1"
-            disabled={!isAdmin}
-          />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="number"
+              min="1"
+              value={form.entry_counter_start}
+              onChange={(e) => set("entry_counter_start", e.target.value)}
+              style={{ ...inp, maxWidth: 180 }}
+              placeholder="1"
+              disabled={!isAdmin}
+            />
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={applyNextNumber}
+                disabled={applying}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: applying ? "#1E2D3D" : "linear-gradient(135deg,#10B981,#059669)",
+                  color: applying ? "#475569" : "#fff",
+                  cursor: applying ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                {applying ? "Aplicando…" : "Aplicar como siguiente número"}
+              </button>
+            )}
+          </div>
+          {applyMsg && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 12,
+                background: applyMsg.ok ? "rgba(16,185,129,0.12)" : "rgba(248,113,113,0.12)",
+                color: applyMsg.ok ? "#34D399" : "#F87171",
+                border: applyMsg.ok ? "1px solid rgba(16,185,129,0.3)" : "1px solid rgba(248,113,113,0.3)",
+              }}
+            >
+              {applyMsg.text}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: "#64748B", marginTop: 6, lineHeight: 1.4 }}>
-            Los códigos tienen formato <code style={{ color: "#94A3B8" }}>E-N-AAAA</code>.
-            Se comparten entre las descargas y las recogidas de palets, así no hay
-            duplicados. Si pones <strong>1</strong> los códigos arrancan en
-            E-1-{new Date().getFullYear()}. Si pones <strong>50</strong>, el siguiente
-            empezará en E-50-{new Date().getFullYear()}. Si borras el último documento,
-            su número queda libre y el próximo lo reutiliza automáticamente.
+            Los códigos tienen formato <code style={{ color: "#94A3B8" }}>E-N-AAAA</code> y son
+            consecutivos compartidos entre descargas, recogidas de palets y recogidas
+            de residuos — nunca se solapan. Pulsa <strong>"Aplicar como siguiente número"</strong> para
+            que el próximo documento creado use ese número.
+            Si el número que pones es menor o igual a alguno ya emitido este año, la app
+            te avisará y no se aplicará para no chocar con números existentes.
           </div>
         </div>
 
@@ -7754,6 +7844,10 @@ export default function App() {
         token
       );
       setSettings({ id: 1, ...clean });
+      // Nota: aplicar el "siguiente número" del contador se hace
+      // ahora con el botón "Aplicar como siguiente número" del
+      // formulario, no automáticamente al guardar ajustes. Así un
+      // save de razón social/email no intenta cambiar el contador.
     } catch (e) {
       setError("Error al guardar ajustes: " + (e.message || e));
     } finally {
@@ -8519,6 +8613,8 @@ export default function App() {
           saving={settingsSaving}
           onBack={() => setView("tareas")}
           isAdmin={isAdmin}
+          token={token}
+          onApplied={(n) => setSettings((s) => ({ ...(s || { id: 1 }), entry_counter_start: n }))}
         />
       </div>
     );
