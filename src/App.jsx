@@ -1354,7 +1354,7 @@ async function sendDirEmail(task, settings, truck, accessToken) {
 
 // Horario permitido para los conductores: 07:30 – 19:00.
 // Los administradores no tienen ninguna restricción horaria.
-const DRIVER_START_MIN = 7 * 60 + 30; // 450  → 07:30
+const DRIVER_START_MIN = 6 * 60;      // 360  → 06:00
 const DRIVER_END_MIN = 19 * 60;       // 1140 → 19:00
 
 // ── Pantalla "fuera de horario" (solo conductores) ────────────
@@ -1390,7 +1390,7 @@ function OutOfHoursScreen({ onLogout }) {
           }}
         >
           La aplicación está disponible para los conductores de{" "}
-          <strong style={{ color: "#E2E8F0" }}>7:30 a 19:00</strong>.
+          <strong style={{ color: "#E2E8F0" }}>6:00 a 19:00</strong>.
           Vuelve a intentarlo dentro de ese horario.
         </div>
         <div style={{ fontSize: 13, color: "#64748B", marginBottom: 26 }}>
@@ -4932,6 +4932,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     transport_agency_id: "",
     transport_agency_name: "",
     transport_agency_email: "",
+    transport_agency_code: "",
     articulos: [],
   });
 
@@ -4989,7 +4990,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     (async () => {
       try {
         const rows = await sbFetch(
-          "transport_agencies?select=id,name,email&is_active=eq.true&order=name.asc&limit=2000",
+          "transport_agencies?select=id,code,name,email&is_active=eq.true&order=name.asc&limit=2000",
           {},
           token
         );
@@ -5137,11 +5138,18 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
       // internos del proveedor, ni el albarán, ni el desglose
       // de artículos — esa información se queda en la BBDD para
       // los demás correos.
-      // Agencia de transporte elegida en el paso 3 (opcional): si
-      // tiene email, recibe una copia (CC) de este mismo correo.
+      // Agencia de transporte elegida en el paso 3 (opcional).
+      // REGLA: solo se envía el correo de "Transporte registrado"
+      // si se ha elegido una agencia con email. Si no se elige
+      // agencia, NO se envía nada al guardar el paso 3 (el albarán
+      // del paso 2 ya se envió a recogidas, y los datos del
+      // transporte se guardan en la BBDD).
+      // Cuando sí hay agencia: el correo va a la agencia (to) y
+      // también al buzón interno de transportes (cc).
       const agencyEmail = (data.transport_agency_email || "").trim();
-      const subject = `✅ Transporte registrado · ${data.numero_interno}`;
-      const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
+      if (agencyEmail) {
+        const subject = `✅ Transporte registrado · ${data.numero_interno}`;
+        const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Datos del transporte registrados${hasFirma ? " con la firma del chófer" : ""}:</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
   ${data.transportista ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Empresa transportista</td><td><strong>${data.transportista}</strong></td></tr>` : ""}
@@ -5149,6 +5157,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   ${data.matricula ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Matrícula camión</td><td><strong>${data.matricula}</strong></td></tr>` : ""}
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
   ${data.transport_agency_name ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Agencia de transporte</td><td><strong>${data.transport_agency_name}</strong></td></tr>` : ""}
+  ${data.transport_agency_code ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Código agencia</td><td><strong>${data.transport_agency_code}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
 ${hasFirma
@@ -5158,32 +5167,33 @@ ${hasFirma
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
 <p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
 </body></html>`;
-      const r = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
-        method: "POST",
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${token || SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: dest,
-          cc: agencyEmail || undefined,
-          subject,
-          bodyHtml,
-          attachments: hasFirma
-            ? [
-                {
-                  filename: "firma.png",
-                  contentType: "image/png",
-                  contentBase64: firmaB64,
-                  inline: true,
-                  contentId: "firma",
-                },
-              ]
-            : [],
-        }),
-      });
-      if (!r.ok) throw new Error(await r.text());
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${token || SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: agencyEmail,
+            cc: dest,
+            subject,
+            bodyHtml,
+            attachments: hasFirma
+              ? [
+                  {
+                    filename: "firma.png",
+                    contentType: "image/png",
+                    contentBase64: firmaB64,
+                    inline: true,
+                    contentId: "firma",
+                  },
+                ]
+              : [],
+          }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+      }
 
       onSaved?.();
       onClose?.();
@@ -5594,6 +5604,7 @@ ${hasFirma
                 setF("transport_agency_id", id);
                 setF("transport_agency_name", ag?.name || "");
                 setF("transport_agency_email", ag?.email || "");
+                setF("transport_agency_code", ag?.code != null ? String(ag.code) : "");
               }}
               style={inp}
             >
