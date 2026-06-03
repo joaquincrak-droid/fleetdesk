@@ -111,6 +111,20 @@ const PALET_ARTICLES_DESCARGAS = [
 // Alias por compatibilidad con código antiguo
 const PALET_ARTICLES = PALET_ARTICLES_RECOGIDAS;
 
+// Catálogo de portes (rutas de carga) para Descargas.
+// Cada porte tiene un código corto (P2, P3, …) y una descripción
+// indicando desde dónde viene la carga. Se selecciona en el
+// asistente de Descargas y aparece en el email.
+const PORTES_DESCARGAS = [
+  { code: "P2", name: "PORTE DESDE MALAGA" },
+  { code: "P3", name: "PORTE DESDE ALMERÍA" },
+  { code: "P4", name: "PORTE DESDE GRANADA" },
+  { code: "P5", name: "PORTE DESDE SEVILLA" },
+  { code: "P6", name: "PORTE DESDE MADRID" },
+  { code: "P7", name: "PORTE DESDE JAEN" },
+  { code: "P8", name: "PORTE DESDE VALENCIA" },
+];
+
 // Camiones de la flota. La matrícula aparece en el PDF del albarán
 // y en el cuerpo del correo. El color se usa para distinguir a cada
 // chófer visualmente en la lista de tareas. El "email" recibe una
@@ -4728,7 +4742,6 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
 
   const rows = [];
   rows.push(["Nº de documento", data.numero_interno || "—"]);
-  rows.push(["Referencia", data.albaran || "—"]);
   rows.push(["Fecha", new Date().toLocaleString("es-ES")]);
   rows.push(["Proveedor", data.proveedor || "—"]);
   if (data.proveedor_code) rows.push(["Código proveedor", String(data.proveedor_code)]);
@@ -4933,6 +4946,8 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
     transport_agency_name: "",
     transport_agency_email: "",
     transport_agency_code: "",
+    porte_code: "",
+    porte_name: "",
     articulos: [],
   });
 
@@ -5050,7 +5065,6 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº interno</td><td><strong>${data.numero_interno}</strong></td></tr>
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
-  ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
 <p>Adjunto el albarán del proveedor en PDF. Los datos del transporte y la firma del chófer se envían a continuación.</p>
@@ -5158,6 +5172,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
   ${data.chofer_nombre ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Chófer</td><td><strong>${data.chofer_nombre}</strong></td></tr>` : ""}
   ${data.transport_agency_name ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Agencia de transporte</td><td><strong>${data.transport_agency_name}</strong></td></tr>` : ""}
   ${data.transport_agency_code ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Código agencia</td><td><strong>${data.transport_agency_code}</strong></td></tr>` : ""}
+  ${data.porte_code ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Porte</td><td><strong>${data.porte_code}${data.porte_name ? ` · ${data.porte_name}` : ""}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha y hora</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
 ${hasFirma
@@ -5280,17 +5295,6 @@ ${hasFirma
                 </div>
               )}
             </div>
-            <div>
-              <label style={labelStyle}>Nº albarán del proveedor *</label>
-              <input
-                value={data.albaran}
-                onChange={(e) => setF("albaran", e.target.value)}
-                style={inp}
-                placeholder="El que viene escrito en el albarán físico"
-                autoComplete="off"
-              />
-            </div>
-
             {/* Artículos */}
             <div
               style={{
@@ -5403,14 +5407,20 @@ ${hasFirma
             <button
               onClick={async () => {
                 if (!data.proveedor.trim()) return setError("Indica el proveedor.");
-                if (!data.albaran.trim()) return setError("Indica el nº de albarán del proveedor.");
                 setError("");
                 // Reservamos el nº correlativo ahora (al avanzar).
+                // El contador es compartido entre todos los tipos
+                // de documentos para que nunca se solapen, pero las
+                // DESCARGAS llevan el prefijo D- (no E-). Por eso
+                // tomamos el código devuelto por nextDocCode (que
+                // viene como "E-NNN-AAAA") y le cambiamos el prefijo
+                // a "D-NNN-AAAA" aquí.
                 if (!data.numero_interno) {
                   setBusy(true);
                   try {
                     const code = await nextDocCode(token, counterStart);
-                    setF("numero_interno", code);
+                    const descargaCode = (code || "").replace(/^E-/, "D-");
+                    setF("numero_interno", descargaCode);
                   } catch (_) {
                     // si falla, se reintenta al volver a pulsar
                   } finally {
@@ -5593,6 +5603,26 @@ ${hasFirma
                 placeholder="Nombre y apellidos"
               />
             </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Porte</label>
+            <select
+              value={data.porte_code}
+              onChange={(e) => {
+                const code = e.target.value;
+                const p = PORTES_DESCARGAS.find((x) => x.code === code);
+                setF("porte_code", code);
+                setF("porte_name", p?.name || "");
+              }}
+              style={inp}
+            >
+              <option value="">— Sin porte —</option>
+              {PORTES_DESCARGAS.map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.code} · {p.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label style={labelStyle}>Agencia de transporte (recibe la documentación)</label>
