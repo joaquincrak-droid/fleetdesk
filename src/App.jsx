@@ -1593,6 +1593,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
       di_number: "",
       start_date: "",
       end_date: "",
+      articulos: [],
     }
   );
   const [showMap, setShowMap] = useState(false);
@@ -1875,16 +1876,117 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={labelStyle}>Peso</label>
+                <label style={labelStyle}>Peso (kg)</label>
                 <input
                   value={form.weight}
                   onChange={(e) => set("weight", e.target.value)}
                   style={inp}
-                  placeholder="ej. 200 kg"
+                  placeholder="ej. 200"
                 />
               </div>
               <div />
             </div>
+
+            {/* Artículos de la entrega ------------------------------ */}
+            <div
+              style={{
+                paddingTop: 8,
+                borderTop: "1px dashed #1E2D3D",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ fontSize: 11, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Artículos ({(form.articulos || []).length})
+              </div>
+              <button
+                type="button"
+                onClick={() => set("articulos", [...(form.articulos || []), { code: "", name: "", cantidad: "" }])}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(135deg,#4F46E5,#7C3AED)",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
+              >
+                + Añadir artículo
+              </button>
+            </div>
+            {(form.articulos || []).map((a, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 1fr auto",
+                  gap: 8,
+                  alignItems: "end",
+                  padding: "8px 10px",
+                  background: "#0D1B2A",
+                  borderRadius: 10,
+                  border: "1px solid #1E2D3D",
+                }}
+              >
+                <div>
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Artículo</label>
+                  <select
+                    value={a.code || ""}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      const found = PALET_ARTICLES_DESCARGAS.find((p) => p.code === code);
+                      const next = (form.articulos || []).map((x, i) =>
+                        i === idx ? { ...x, code, name: found?.name || x.name || "" } : x,
+                      );
+                      set("articulos", next);
+                    }}
+                    style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
+                  >
+                    <option value="">— Selecciona artículo —</option>
+                    {PALET_ARTICLES_DESCARGAS.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.code} · {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Cantidad</label>
+                  <input
+                    type="number"
+                    value={a.cantidad}
+                    onChange={(e) => {
+                      const next = (form.articulos || []).map((x, i) =>
+                        i === idx ? { ...x, cantidad: e.target.value } : x,
+                      );
+                      set("articulos", next);
+                    }}
+                    style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
+                    placeholder="50"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => set("articulos", (form.articulos || []).filter((_, i) => i !== idx))}
+                  title="Eliminar artículo"
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #7F1D1D",
+                    background: "transparent",
+                    color: "#F87171",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+            ))}
+
             {isAdmin && (
               <div>
                 <label style={labelStyle}>Estado</label>
@@ -7018,9 +7120,11 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     hour: "2-digit",
     minute: "2-digit",
   });
-  const cantidad = task.quantity || task.weight || "";
+  const cantidad = task.quantity || "";
+  const pesoKg = task.weight || "";
   const conductor = truck?.driver || "";
   const matricula = truck?.plate || "";
+  const isEntrega = task.type === "entrega";
 
   // Cabecera
   doc.setFont("helvetica", "bold");
@@ -7034,17 +7138,21 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
   if (task.di_number && task.subtype !== "palets") {
     rows.push(["Nº DI", String(task.di_number)]);
   }
-  if (task.order_number) rows.push(["Referencia", String(task.order_number)]);
+  if (task.order_number) {
+    const refLabel = isEntrega ? "Referencia cliente" : "Referencia";
+    rows.push([refLabel, String(task.order_number)]);
+  }
   rows.push(["Fecha", `${fecha} ${hora}`]);
   rows.push(["Proveedor / cliente", cliente]);
   if (task.origin_code) {
-    const codeLabel = task.subtype === "residuos" ? "Código cliente" : "Código proveedor";
+    const codeLabel = task.subtype === "residuos" || isEntrega ? "Código cliente" : "Código proveedor";
     rows.push([codeLabel, String(task.origin_code)]);
   }
   if (task.origin_nif || task.origin_cif) {
     rows.push(["NIF/CIF", String(task.origin_nif || task.origin_cif)]);
   }
   if (cantidad) rows.push(["Cantidad", String(cantidad)]);
+  if (pesoKg) rows.push(["Peso (kg)", String(pesoKg)]);
   if (conductor || matricula) {
     rows.push([
       "Camión",
@@ -7090,7 +7198,7 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
     doc.setTextColor(20, 20, 20);
-    doc.text("Desglose de palets por modelo", M, y + 4);
+    doc.text(isEntrega ? "Desglose por artículo" : "Desglose de palets por modelo", M, y + 4);
     y += 6;
 
     doc.setFont("helvetica", "bold");
@@ -7117,7 +7225,7 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     doc.setFillColor(245, 245, 245);
     doc.rect(M, y, W, rowAh, "FD");
     doc.text("TOTAL", M + colW[0] + colW[1] - 4, y + 4, { align: "right" });
-    doc.text(`${totalPalets} palets`, M + colW[0] + colW[1] + 2, y + 4);
+    doc.text(`${totalPalets} ${isEntrega ? "uds" : "palets"}`, M + colW[0] + colW[1] + 2, y + 4);
     y += rowAh + 4;
   }
 
