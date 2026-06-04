@@ -5162,7 +5162,13 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
       // también al buzón interno de transportes (cc).
       const agencyEmail = (data.transport_agency_email || "").trim();
       if (agencyEmail) {
-        const subject = `✅ Transporte registrado · ${data.numero_interno}`;
+        // En el asunto del correo de transporte el número va con
+        // prefijo D-NNN-AAAA (en lugar del E- que se usa en BBDD
+        // y en el correo del paso 2). Es el mismo correlativo, solo
+        // con prefijo distinto para distinguir a simple vista que
+        // es una descarga, no una recogida.
+        const subjectCode = (data.numero_interno || "").replace(/^E-/, "D-");
+        const subject = `✅ Transporte registrado · ${subjectCode}`;
         const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Datos del transporte registrados${hasFirma ? " con la firma del chófer" : ""}:</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
@@ -5410,17 +5416,17 @@ ${hasFirma
                 setError("");
                 // Reservamos el nº correlativo ahora (al avanzar).
                 // El contador es compartido entre todos los tipos
-                // de documentos para que nunca se solapen, pero las
-                // DESCARGAS llevan el prefijo D- (no E-). Por eso
-                // tomamos el código devuelto por nextDocCode (que
-                // viene como "E-NNN-AAAA") y le cambiamos el prefijo
-                // a "D-NNN-AAAA" aquí.
+                // de documentos (recogidas y descargas) para que
+                // nunca se solapen. Las descargas se guardan en
+                // BBDD como E-NNN-AAAA, igual que las recogidas.
+                // Solo el asunto del email del PASO 3 (transporte)
+                // lo manda como D-NNN-AAAA — eso se transforma al
+                // construir ese email, no aquí.
                 if (!data.numero_interno) {
                   setBusy(true);
                   try {
                     const code = await nextDocCode(token, counterStart);
-                    const descargaCode = (code || "").replace(/^E-/, "D-");
-                    setF("numero_interno", descargaCode);
+                    if (code) setF("numero_interno", String(code));
                   } catch (_) {
                     // si falla, se reintenta al volver a pulsar
                   } finally {
