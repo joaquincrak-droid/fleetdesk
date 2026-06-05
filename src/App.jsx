@@ -1685,6 +1685,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
       start_date: "",
       end_date: "",
       articulos: [],
+      supplier_albaran: "",
     }
   );
   const [showMap, setShowMap] = useState(false);
@@ -2273,6 +2274,15 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                         placeholder="ej. 20 europalet, 5 americanos"
                       />
                     </div>
+                    <div>
+                      <label style={labelStyle}>Nº albarán del proveedor (opcional)</label>
+                      <input
+                        value={form.supplier_albaran || ""}
+                        onChange={(e) => set("supplier_albaran", e.target.value)}
+                        style={inp}
+                        placeholder="El que escribe el proveedor en su albarán"
+                      />
+                    </div>
                     {isAdmin && (
                       <div>
                         <label style={labelStyle}>Estado</label>
@@ -2330,6 +2340,15 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     onChange={(e) => set("waste_description", e.target.value)}
                     style={inp}
                     placeholder="ej. Residuos mezclados de construcción"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Nº albarán del proveedor (opcional)</label>
+                  <input
+                    value={form.supplier_albaran || ""}
+                    onChange={(e) => set("supplier_albaran", e.target.value)}
+                    style={inp}
+                    placeholder="El que escribe el proveedor en su albarán"
                   />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -4935,6 +4954,7 @@ async function generateEntradaAlbaranPdf(data, photoBase64) {
 
   const rows = [];
   rows.push(["Nº de documento", data.numero_interno || "—"]);
+  if (data.albaran) rows.push(["Nº albarán proveedor", String(data.albaran)]);
   rows.push(["Fecha", new Date().toLocaleString("es-ES")]);
   rows.push(["Proveedor", data.proveedor || "—"]);
   if (data.proveedor_code) rows.push(["Código proveedor", String(data.proveedor_code)]);
@@ -5258,6 +5278,7 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 14px 0;">
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº interno</td><td><strong>${data.numero_interno}</strong></td></tr>
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Proveedor</td><td><strong>${data.proveedor}</strong></td></tr>
+  ${data.albaran ? `<tr><td style="padding:3px 14px 3px 0;color:#64748B;">Nº albarán proveedor</td><td><strong>${data.albaran}</strong></td></tr>` : ""}
   <tr><td style="padding:3px 14px 3px 0;color:#64748B;">Fecha</td><td>${new Date().toLocaleString("es-ES")}</td></tr>
 </table>
 <p>Adjunto el albarán del proveedor en PDF. Los datos del transporte y la firma del chófer se envían a continuación.</p>
@@ -5493,6 +5514,16 @@ ${hasFirma
                   ))}
                 </div>
               )}
+            </div>
+            <div>
+              <label style={labelStyle}>Nº albarán del proveedor (opcional)</label>
+              <input
+                value={data.albaran}
+                onChange={(e) => setF("albaran", e.target.value)}
+                style={inp}
+                placeholder="El que viene escrito en el albarán físico"
+                autoComplete="off"
+              />
             </div>
             {/* Artículos */}
             <div
@@ -7233,6 +7264,9 @@ async function generateAlbaranPdf(task, photoBase64, truck = null, receivedBy = 
     const refLabel = isEntrega ? "Referencia cliente" : "Referencia";
     rows.push([refLabel, String(task.order_number)]);
   }
+  if (task.supplier_albaran) {
+    rows.push(["Nº albarán proveedor", String(task.supplier_albaran)]);
+  }
   rows.push(["Fecha", `${fecha} ${hora}`]);
   rows.push(["Proveedor / cliente", cliente]);
   if (task.origin_code) {
@@ -8196,6 +8230,7 @@ export default function App() {
         "position",
         "notes",
         "articulos",
+        "supplier_albaran",
       ];
       // Campos DAT: solo se mandan si tienen valor, para no romper
       // cuando la BD aún no tiene esas columnas.
