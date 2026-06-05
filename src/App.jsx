@@ -4933,6 +4933,132 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
 // Genera un PDF A4 con la foto del albarán de una entrada de
 // palets + cabecera con los datos básicos. Devuelve base64 sin
 // el prefijo "data:application/pdf;base64,".
+// PDF que se adjunta al correo del PASO 3 del asistente de
+// Descargas. SOLO lleva:
+//   · Nombre y código de la empresa transportista (agencia)
+//   · Código y nombre de cada artículo de la descarga
+//   · Fecha
+//   · Firma del chófer
+async function generateTransportePdf(data) {
+  await loadJsPdf();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const M = 15;
+  const W = 210 - 2 * M;
+
+  // Cabecera
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text("TRANSPORTE", 105, M + 4, { align: "center" });
+
+  let y = M + 14;
+
+  // ── Empresa transportista (agencia) ──
+  const agencyName = data.transport_agency_name || "";
+  const agencyCode = data.transport_agency_code || "";
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Empresa transportista:", M, y);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(20, 20, 20);
+  const agencyLine = agencyCode
+    ? `${agencyCode} · ${agencyName || "—"}`
+    : (agencyName || "—");
+  doc.text(agencyLine, M + 48, y, { maxWidth: W - 50 });
+  y += 8;
+
+  // ── Fecha ──
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Fecha:", M, y);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(20, 20, 20);
+  doc.text(new Date().toLocaleString("es-ES"), M + 48, y);
+  y += 10;
+
+  // ── Tabla de artículos (código + nombre) ──
+  const articulos = Array.isArray(data.articulos)
+    ? data.articulos.filter((a) => a && (a.code || a.name || a.descripcion))
+    : [];
+  if (articulos.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(20, 20, 20);
+    doc.text("Artículos:", M, y);
+    y += 4;
+
+    const colW = [W * 0.25, W * 0.75];
+    const headH = 6;
+    const rowAh = 6;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setFillColor(225, 225, 225);
+    doc.rect(M, y, W, headH, "FD");
+    doc.text("Código", M + 2, y + 4);
+    doc.text("Descripción", M + colW[0] + 2, y + 4);
+    y += headH;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    articulos.forEach((a) => {
+      doc.rect(M, y, W, rowAh);
+      doc.text(String(a.code || "—"), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+      doc.text(String(a.name || a.descripcion || "—"), M + colW[0] + 2, y + 4, {
+        maxWidth: colW[1] - 4,
+      });
+      y += rowAh;
+    });
+    y += 6;
+  }
+
+  // ── Firma del chófer ──
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(20, 20, 20);
+  doc.text("Firma del chófer:", M, y);
+  y += 4;
+
+  if (data.chofer_firma) {
+    const firmaData = data.chofer_firma.startsWith("data:")
+      ? data.chofer_firma
+      : `data:image/png;base64,${data.chofer_firma}`;
+    try {
+      doc.addImage(firmaData, "PNG", M, y, 80, 40);
+      y += 44;
+    } catch {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 150);
+      doc.text("(Firma no disponible)", M, y + 8);
+      y += 14;
+    }
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(150, 0, 0);
+    doc.text("Sin firma del chófer", M, y + 6);
+    y += 12;
+  }
+
+  // Pie
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    "Documento generado por RECIPALETS TOTANA S.L. al registrar el transporte.",
+    M,
+    297 - 8,
+  );
+
+  const dataUri = doc.output("datauristring");
+  return dataUri.split(",")[1];
+}
+
 async function generateEntradaAlbaranPdf(data, photoBase64) {
   await loadJsPdf();
   const { jsPDF } = window.jspdf;
@@ -5402,6 +5528,37 @@ ${hasFirma
 <hr style="border:none;border-top:1px solid #ccc;margin:14px 0 8px 0;" />
 <p style="color:#888;font-size:9pt;">Generado por RECIPALETS TOTANA S.L.</p>
 </body></html>`;
+        // Generamos el PDF de transporte (porte + transportista +
+        // matrícula + chófer + agencia + firma) y lo adjuntamos al
+        // correo. Si la firma además se quiere ver inline en el
+        // cuerpo, se manda como recurso CID.
+        let transportePdfB64 = "";
+        try {
+          transportePdfB64 = await generateTransportePdf({
+            ...data,
+            chofer_firma: hasFirma ? data.chofer_firma : "",
+          });
+        } catch (_) {
+          // si jsPDF falla, seguimos sin adjunto, mejor mandar
+          // el correo aunque no haya PDF.
+        }
+        const attachments = [];
+        if (transportePdfB64) {
+          attachments.push({
+            filename: `transporte_${subjectCode}.pdf`,
+            contentType: "application/pdf",
+            contentBase64: transportePdfB64,
+          });
+        }
+        if (hasFirma) {
+          attachments.push({
+            filename: "firma.png",
+            contentType: "image/png",
+            contentBase64: firmaB64,
+            inline: true,
+            contentId: "firma",
+          });
+        }
         const r = await fetch(`${SUPABASE_URL}/functions/v1/clever-processor`, {
           method: "POST",
           headers: {
@@ -5414,17 +5571,7 @@ ${hasFirma
             cc: dest,
             subject,
             bodyHtml,
-            attachments: hasFirma
-              ? [
-                  {
-                    filename: "firma.png",
-                    contentType: "image/png",
-                    contentBase64: firmaB64,
-                    inline: true,
-                    contentId: "firma",
-                  },
-                ]
-              : [],
+            attachments,
           }),
         });
         if (!r.ok) throw new Error(await r.text());
