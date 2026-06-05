@@ -111,6 +111,97 @@ const PALET_ARTICLES_DESCARGAS = [
 // Alias por compatibilidad con código antiguo
 const PALET_ARTICLES = PALET_ARTICLES_RECOGIDAS;
 
+// Catálogo de artículos de VENTA para Entregas.
+// Es el listado completo de palets, listones, tablas y tacos que
+// RECIPALETS factura a clientes. Se usa en el formulario de
+// Entrega (Tareas → Nueva entrega → sección Artículos) y luego
+// aparece en el albarán firmado de la entrega.
+const PALET_ARTICLES_VENTA = [
+  // Palets sin tratamiento térmico (000-037)
+  { code: "001", name: "PALET EUROPEO BLANCO" },
+  { code: "002", name: "PALET EUROPEO" },
+  { code: "003", name: "PALETS 80 X 120" },
+  { code: "004", name: "PALETS 80 X 120 SEGUNDA" },
+  { code: "005", name: "PALETS 80 X 120 ESPECIALES" },
+  { code: "006", name: "PALETS 100 X 120" },
+  { code: "007", name: "100 X 120 FUERTE PERIMÉTRICO" },
+  { code: "008", name: "PALETS 100 X 120 7 TABLAS" },
+  { code: "009", name: "PALETS 100 X 120 9 TABLAS" },
+  { code: "010", name: "PALETS 100 X 120 FINO PERIMÉTRICO" },
+  { code: "011", name: "PALETS 100 X 120 CP1" },
+  { code: "012", name: "PALETS 100 X 120 LISTONES" },
+  { code: "013", name: "PALETS 114 X 114 CP3" },
+  { code: "014", name: "PALETS 100 X 120 CP6" },
+  { code: "015", name: "PALETS 110 X 130 CP7" },
+  { code: "016", name: "PALETS 114 X 114 CP9" },
+  { code: "017", name: "PALETS 60 X 80" },
+  { code: "018", name: "PALETS 110 X 110" },
+  { code: "019", name: "PALETS 110 X 135" },
+  { code: "020", name: "PALETS 105 X 125" },
+  { code: "021", name: "PALETS 110 X 130" },
+  { code: "022", name: "PALETS 110 X 110 LISTONES" },
+  { code: "023", name: "PALETS 100 X 100" },
+  { code: "024", name: "PALETS 120 X 120" },
+  { code: "025", name: "PALETS 115 X 115" },
+  { code: "026", name: "PALETS 100 X 100 LISTONES" },
+  { code: "027", name: "PALETS 90 X 110" },
+  { code: "028", name: "PALETS 80 X 110" },
+  { code: "029", name: "PALETS 100 X 110" },
+  { code: "030", name: "PALETS 90 X 120" },
+  { code: "031", name: "PALETS DE PLASTICO" },
+  { code: "032", name: "PALETS 100 X 105" },
+  { code: "034", name: "NORMALES" },
+  { code: "035", name: "PALET DE 110 X 120" },
+  { code: "036", name: "PALETS 105 X 105 LISTONES" },
+  { code: "037", name: "PALETS 100 X 120 4 TABLAS" },
+  // Palets tratados H.T. (101-138)
+  { code: "101", name: "PALETS EUROPEOS BLANCOS (TRATADOS H.T.)" },
+  { code: "102", name: "PALETS EUROPEOS (TRATADOS H.T.)" },
+  { code: "103", name: "PALETS 80 X 120 (TRATADOS H.T.)" },
+  { code: "104", name: "PALETS 80 X 120 SEGUNDA (TRATADOS H.T.)" },
+  { code: "106", name: "PALETS 100 X 120 (TRATADOS H.T.)" },
+  { code: "107", name: "100 X 120 FUERTE PERIMÉTRICO (TRATADOS H.T.)" },
+  { code: "108", name: "PALETS 100 X 120 7 TABLAS (TRATADOS H.T.)" },
+  { code: "109", name: "PALETS 100 X 120 9 TABLAS (TRATADOS H.T.)" },
+  { code: "110", name: "PALET 100 X 120 FINO PERIMÉTRICO (TRATADOS H.T.)" },
+  { code: "111", name: "PALET 100 X 120 CP1 (TRATADOS H.T.)" },
+  { code: "112", name: "PALETS 100 X 120 LISTONES (TRATADOS H.T.)" },
+  { code: "113", name: "PALETS 114 X 114 CP3 (TRATADOS H.T.)" },
+  { code: "114", name: "PALETS 100 X 120 CP6 (TRATADOS H.T.)" },
+  { code: "115", name: "PALETS 110 X 130 CP7 (TRATADOS H.T.)" },
+  { code: "116", name: "PALETS 114 X 114 CP9 (TRATADOS H.T.)" },
+  { code: "117", name: "PALETS 60 X 80 (TRATADOS H.T.)" },
+  { code: "118", name: "PALETS 110 X 110 (TRATADOS H.T.)" },
+  { code: "119", name: "PALETS 110 X 135 (TRATADOS H.T.)" },
+  { code: "120", name: "PALETS 105 X 125 (TRATADOS H.T.)" },
+  { code: "121", name: "PALETS 110 X 130 (TRATADOS H.T.)" },
+  { code: "122", name: "PALETS 110 X 110 LISTONES (TRATADOS H.T.)" },
+  { code: "123", name: "PALETS 100 X 100 (TRATADOS H.T.)" },
+  { code: "124", name: "PALETS 120 X 120 (TRATADOS H.T.)" },
+  { code: "125", name: "PALETS 115 X 115 (TRATADOS H.T.)" },
+  { code: "126", name: "PALETS 100 X 100 LISTONES (TRATADOS H.T.)" },
+  { code: "127", name: "PALETS 90 X 110 (TRATADOS H.T.)" },
+  { code: "128", name: "PALETS 80 X 110 (TRATADOS H.T.)" },
+  { code: "129", name: "PALETS 100 X 110 (TRATADOS H.T.)" },
+  { code: "130", name: "PALETS 90 X 120 (TRATADOS H.T.)" },
+  { code: "135", name: "PALET DE 110 X 120 TRATADOS H.T." },
+  { code: "138", name: "PALETS 220 X 140 (TRATADOS H.T.)" },
+  // Especiales (E*)
+  { code: "E1", name: "PALETS 115 X 75 TRATADOS H.T." },
+  { code: "E2", name: "PALETS 124 X 107 TRATADOS H.T." },
+  { code: "E3", name: "PALETS SOLO TRATAMIENTO" },
+  { code: "E4", name: "LISTONES SOLO TRATAMIENTO H.T." },
+  // Especiales (F*)
+  { code: "F1", name: "PALET 2200 X 100 X 18" },
+  { code: "F2", name: "PALET 220 X 140 TRATADOS H.T." },
+  { code: "F3", name: "PALET 220 X 70 (TRATADOS H.T.)" },
+  // Tablas y tacos (T*)
+  { code: "T1", name: "TACOS PARA REPARAR EUROPEO" },
+  { code: "T2", name: "TABLA 220 X 10 X 1.8 CM" },
+  { code: "T3", name: "TABLA 140 X 10 X 1.8 CM" },
+  { code: "T5", name: "TACO DE AGLOMERADO 95 X 95 X 78 MM" },
+];
+
 // Catálogo de portes (rutas de carga) para Descargas.
 // Cada porte tiene un código corto (P2, P3, …) y una descripción
 // indicando desde dónde viene la carga. Se selecciona en el
@@ -1937,7 +2028,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     value={a.code || ""}
                     onChange={(e) => {
                       const code = e.target.value;
-                      const found = PALET_ARTICLES_DESCARGAS.find((p) => p.code === code);
+                      const found = PALET_ARTICLES_VENTA.find((p) => p.code === code);
                       const next = (form.articulos || []).map((x, i) =>
                         i === idx ? { ...x, code, name: found?.name || x.name || "" } : x,
                       );
@@ -1946,7 +2037,7 @@ function TaskModal({ task, onClose, onSave, loading, isAdmin, userTruck = null, 
                     style={{ ...inp, fontSize: 12, padding: "8px 10px" }}
                   >
                     <option value="">— Selecciona artículo —</option>
-                    {PALET_ARTICLES_DESCARGAS.map((p) => (
+                    {PALET_ARTICLES_VENTA.map((p) => (
                       <option key={p.code} value={p.code}>
                         {p.code} · {p.name}
                       </option>
