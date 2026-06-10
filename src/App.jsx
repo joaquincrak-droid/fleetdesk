@@ -4935,11 +4935,12 @@ function PaletEntryFormModal({ existing = null, operators = [], onClose, onSave,
 // el prefijo "data:application/pdf;base64,".
 // PDF que se adjunta al correo del PASO 3 del asistente de
 // Descargas. SOLO lleva:
+//   · Código del documento (P-NNN-AAAA) en la cabecera
 //   · Nombre y código de la empresa transportista (agencia)
-//   · Código y nombre de cada artículo de la descarga
 //   · Fecha
+//   · El PORTE (P2/P3/…/P8 + descripción), como único "artículo"
 //   · Firma del chófer
-async function generateTransportePdf(data) {
+async function generateTransportePdf(data, transporteCode = "") {
   await loadJsPdf();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -4950,8 +4951,14 @@ async function generateTransportePdf(data) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.text("TRANSPORTE", 105, M + 4, { align: "center" });
+  if (transporteCode) {
+    doc.setFontSize(11);
+    doc.setTextColor(80, 80, 80);
+    doc.text(String(transporteCode), 105, M + 11, { align: "center" });
+    doc.setTextColor(20, 20, 20);
+  }
 
-  let y = M + 14;
+  let y = transporteCode ? M + 20 : M + 14;
 
   // ── Empresa transportista (agencia) ──
   const agencyName = data.transport_agency_name || "";
@@ -4980,11 +4987,11 @@ async function generateTransportePdf(data) {
   doc.text(new Date().toLocaleString("es-ES"), M + 48, y);
   y += 10;
 
-  // ── Tabla de artículos (código + nombre) ──
-  const articulos = Array.isArray(data.articulos)
-    ? data.articulos.filter((a) => a && (a.code || a.name || a.descripcion))
-    : [];
-  if (articulos.length) {
+  // ── Tabla con UN solo artículo: el PORTE ──
+  // Aquí NO van los códigos de palets (008, 006, …) que se han
+  // descargado. Lo único que aparece es el código de porte (P2, P3
+  // … P8) con su descripción.
+  if (data.porte_code) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(20, 20, 20);
@@ -5005,15 +5012,12 @@ async function generateTransportePdf(data) {
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    articulos.forEach((a) => {
-      doc.rect(M, y, W, rowAh);
-      doc.text(String(a.code || "—"), M + 2, y + 4, { maxWidth: colW[0] - 4 });
-      doc.text(String(a.name || a.descripcion || "—"), M + colW[0] + 2, y + 4, {
-        maxWidth: colW[1] - 4,
-      });
-      y += rowAh;
+    doc.rect(M, y, W, rowAh);
+    doc.text(String(data.porte_code), M + 2, y + 4, { maxWidth: colW[0] - 4 });
+    doc.text(String(data.porte_name || "—"), M + colW[0] + 2, y + 4, {
+      maxWidth: colW[1] - 4,
     });
-    y += 6;
+    y += rowAh + 6;
   }
 
   // ── Firma del chófer ──
@@ -5502,12 +5506,22 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
       // también al buzón interno de transportes (cc).
       const agencyEmail = (data.transport_agency_email || "").trim();
       if (agencyEmail) {
-        // En el asunto del correo de transporte el número va con
-        // prefijo D-NNN-AAAA (en lugar del E- que se usa en BBDD
-        // y en el correo del paso 2). Es el mismo correlativo, solo
-        // con prefijo distinto para distinguir a simple vista que
-        // es una descarga, no una recogida.
-        const subjectCode = (data.numero_interno || "").replace(/^E-/, "D-");
+        // El documento de transporte usa una serie PROPIA P-NNN-AAAA
+        // (independiente de la E- de recogidas y la D- de descargas).
+        // La gestiona la función SQL public.next_porte_code(): cada
+        // vez devuelve el siguiente número y lo incrementa.
+        let subjectCode = (data.numero_interno || "").replace(/^E-/, "P-");
+        try {
+          const res = await sbFetch(
+            "rpc/next_porte_code",
+            { method: "POST", body: "{}" },
+            token,
+          );
+          const c = typeof res === "string" ? res : res?.[0] || res;
+          if (c) subjectCode = String(c);
+        } catch (_) {
+          // si falla la RPC seguimos con el fallback derivado del E-
+        }
         const subject = `✅ Transporte registrado · ${subjectCode}`;
         const bodyHtml = `<!DOCTYPE html><html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">
 <p>Datos del transporte registrados${hasFirma ? " con la firma del chófer" : ""}:</p>
@@ -5534,10 +5548,13 @@ ${hasFirma
         // cuerpo, se manda como recurso CID.
         let transportePdfB64 = "";
         try {
-          transportePdfB64 = await generateTransportePdf({
-            ...data,
-            chofer_firma: hasFirma ? data.chofer_firma : "",
-          });
+          transportePdfB64 = await generateTransportePdf(
+            {
+              ...data,
+              chofer_firma: hasFirma ? data.chofer_firma : "",
+            },
+            subjectCode,
+          );
         } catch (_) {
           // si jsPDF falla, seguimos sin adjunto, mejor mandar
           // el correo aunque no haya PDF.
