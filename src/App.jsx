@@ -7812,6 +7812,42 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin, token = nul
     }
   };
 
+  // ── Contador de TRANSPORTES (serie P-NNN-AAAA) ──────────────
+  // Es independiente del contador de albaranes. Lo gestiona la
+  // RPC set_next_porte_n(start_n).
+  const [porteStart, setPorteStart] = useState("");
+  const [applyingPorte, setApplyingPorte] = useState(false);
+  const [applyPorteMsg, setApplyPorteMsg] = useState(null);
+  const applyNextPorteNumber = async () => {
+    const n = parseInt(porteStart, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setApplyPorteMsg({ ok: false, text: "Pon un número entero mayor o igual que 1." });
+      return;
+    }
+    setApplyingPorte(true);
+    setApplyPorteMsg(null);
+    try {
+      await sbFetch(
+        "rpc/set_next_porte_n",
+        { method: "POST", body: JSON.stringify({ start_n: n }) },
+        token,
+      );
+      setApplyPorteMsg({
+        ok: true,
+        text: `Hecho. El próximo documento de transporte será P-${n}-${new Date().getFullYear()}.`,
+      });
+    } catch (err) {
+      let msg = err?.message || String(err);
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.message) msg = parsed.message;
+      } catch {}
+      setApplyPorteMsg({ ok: false, text: msg });
+    } finally {
+      setApplyingPorte(false);
+    }
+  };
+
   return (
     <div style={{ padding: "16px", maxWidth: 640, margin: "0 auto" }}>
       <h2 style={{ margin: "4px 0 14px", fontSize: 18, fontWeight: 800, color: "#F1F5F9" }}>
@@ -7980,6 +8016,66 @@ function SettingsScreen({ settings, onSave, saving, onBack, isAdmin, token = nul
             que el próximo documento creado use ese número.
             Si el número que pones es menor o igual a alguno ya emitido este año, la app
             te avisará y no se aplicará para no chocar con números existentes.
+          </div>
+        </div>
+
+        {/* Contador de Transportes (serie P-NNN-AAAA) */}
+        <div style={{ marginTop: 6, paddingTop: 12, borderTop: "1px dashed #1E2D3D" }}>
+          <label style={labelStyle}>
+            Siguiente número de transporte (paso 3 del asistente de Descargas)
+          </label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="number"
+              min="1"
+              value={porteStart}
+              onChange={(e) => setPorteStart(e.target.value)}
+              style={{ ...inp, maxWidth: 180 }}
+              placeholder="ej. 4"
+              disabled={!isAdmin}
+            />
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={applyNextPorteNumber}
+                disabled={applyingPorte}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: applyingPorte ? "#1E2D3D" : "linear-gradient(135deg,#10B981,#059669)",
+                  color: applyingPorte ? "#475569" : "#fff",
+                  cursor: applyingPorte ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                {applyingPorte ? "Aplicando…" : "Aplicar como siguiente número"}
+              </button>
+            )}
+          </div>
+          {applyPorteMsg && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 12,
+                background: applyPorteMsg.ok ? "rgba(16,185,129,0.12)" : "rgba(248,113,113,0.12)",
+                color: applyPorteMsg.ok ? "#34D399" : "#F87171",
+                border: applyPorteMsg.ok ? "1px solid rgba(16,185,129,0.3)" : "1px solid rgba(248,113,113,0.3)",
+              }}
+            >
+              {applyPorteMsg.text}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: "#64748B", marginTop: 6, lineHeight: 1.4 }}>
+            Los códigos de transporte tienen formato <code style={{ color: "#94A3B8" }}>P-N-AAAA</code> y
+            forman una serie INDEPENDIENTE — no se mezclan con los albaranes.
+            Cada vez que se firma una descarga con agencia se incrementa una unidad.
+            Pulsa <strong>"Aplicar como siguiente número"</strong> para que el siguiente correo
+            de transporte salga con ese número.
           </div>
         </div>
 
