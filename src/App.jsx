@@ -5471,15 +5471,42 @@ function PaletEntryWizard({ token, operators = [], counterStart = 1, onClose, on
         chofer_firma: data.chofer_firma || null,
         articulos: cleanArticulos,
       };
-      await sbFetch(
-        "palet_entries",
-        {
-          method: "POST",
-          body: JSON.stringify(row),
-          headers: { Prefer: "return=minimal" },
-        },
-        token,
-      );
+      // INSERT con reintento si choca con la clave única de
+      // numero_interno (código 23505). Esto pasa cuando el
+      // contador doc_counter se ha desincronizado con los E-
+      // que ya hay en palet_entries — pedimos un número nuevo a
+      // next_doc_code() y reintentamos una vez. Si vuelve a
+      // chocar tras el segundo intento, tiramos el error de
+      // verdad para que el usuario lo vea.
+      const tryInsert = async () => {
+        await sbFetch(
+          "palet_entries",
+          {
+            method: "POST",
+            body: JSON.stringify(row),
+            headers: { Prefer: "return=minimal" },
+          },
+          token,
+        );
+      };
+      try {
+        await tryInsert();
+      } catch (e1) {
+        const msg = String(e1?.message || e1 || "");
+        const isDup = msg.includes("23505") || msg.includes("duplicate key");
+        if (!isDup) throw e1;
+        // Pedimos un número nuevo y reintentamos
+        try {
+          const code = await nextDocCode(token, counterStart);
+          if (code) {
+            row.numero_interno = String(code);
+            setF("numero_interno", String(code));
+          }
+        } catch (_) {
+          // si no se puede renovar, dejamos el de antes
+        }
+        await tryInsert();
+      }
 
       // Segundo email: datos del transporte + firma (si la hay)
       const hasFirma = !!data.chofer_firma;
